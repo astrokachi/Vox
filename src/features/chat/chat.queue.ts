@@ -3,6 +3,7 @@ import { db } from "../../shared/db/index.js";
 import { messages } from "../../shared/db/schema.js";
 import { AIService } from "../../shared/services/ai.service.js";
 import { SocketService } from "../../shared/services/socket.service.js";
+import { getKeydbConnection } from "../../shared/lib/keydb-url.js";
 import { ChatJobData, ChatJobResult } from "./chat.types.js";
 
 const aiService = new AIService();
@@ -10,9 +11,7 @@ const aiService = new AIService();
 export const chatQueue = new Queue<ChatJobData, ChatJobResult>(
   "chat-response",
   {
-    connection: {
-      url: process.env.REDIS_URL,
-    },
+    connection: getKeydbConnection(),
     defaultJobOptions: {
       attempts: 3,
       backoff: {
@@ -135,9 +134,7 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
     }
   },
   {
-    connection: {
-      url: process.env.REDIS_URL,
-    },
+    connection: getKeydbConnection(),
     concurrency: 5,
   },
 );

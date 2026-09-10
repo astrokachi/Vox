@@ -3,15 +3,14 @@ import { XService } from "../../shared/services/x.service.js";
 import { AIService } from "../../shared/services/ai.service.js";
 import { TweetReplyJobData, TweetReplyJobResultType } from "./tweet-reply.types.js";
 import { xTokenRefresh } from "../auth/auth.service.js";
-import { redisClient } from "../../shared/utils/redis-client.js";
+import { keydbClient } from "../../shared/utils/keydb-client.js";
+import { getKeydbConnection } from "../../shared/lib/keydb-url.js";
 
 export const tweetReplyQueue = new Queue<
   TweetReplyJobData,
   TweetReplyJobResultType
 >("tweet-reply", {
-  connection: {
-    url: process.env.REDIS_URL,
-  },
+  connection: getKeydbConnection(),
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -28,7 +27,7 @@ export const worker = new Worker<TweetReplyJobData, TweetReplyJobResultType>(
     let { tweetUrl, accessToken, refreshToken, sessionID, customInstructions } = job.data;
     console.log(`processing job: ${job.id}`);
     try {
-      const sessionData = await redisClient.get(`session:${sessionID}`);
+      const sessionData = await keydbClient.get(`session:${sessionID}`);
 
       if (sessionData) {
         const freshTokens = JSON.parse(sessionData);
@@ -77,9 +76,7 @@ export const worker = new Worker<TweetReplyJobData, TweetReplyJobResultType>(
     }
   },
   {
-    connection: {
-      url: process.env.REDIS_URL,
-    },
+    connection: getKeydbConnection(),
     concurrency: 1,
   }
 );

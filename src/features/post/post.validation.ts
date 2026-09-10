@@ -7,6 +7,13 @@ export const postSchema = Joi.object({
   message: Joi.string().required().min(1),
 });
 
+export const schedulePostSchema = Joi.object({
+  message: Joi.string().required().min(1),
+  scheduledAt: Joi.date().iso().greater("now").required().messages({
+    "date.greater": "scheduledAt must be in the future",
+  }),
+});
+
 const storage = multer.memoryStorage();
 const fileFilter = (
   _req: Request,
@@ -33,6 +40,23 @@ export const validatePost: RequestHandler = (
 ) => {
   try {
     validate(postSchema, req.body);
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const validateSchedulePost: RequestHandler = (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const value = validate<{ message: string; scheduledAt: Date }>(
+      schedulePostSchema,
+      req.body,
+    );
+    req.body = value;
     next();
   } catch (error) {
     next(error);

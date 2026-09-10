@@ -3,7 +3,7 @@ import { relations, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 
 // --- ENUMS ---
-export const tweetStatusEnum = pgEnum('TweetStatus', ['DRAFT', 'SENT', 'SCHEDULED']);
+export const tweetStatusEnum = pgEnum('TweetStatus', ['DRAFT', 'SENT', 'SCHEDULED', 'CANCELLED', 'FAILED']);
 export const chatTypeEnum = pgEnum('ChatType', ['SINGLE', 'MULTIPLE']);
 export const scheduledTweetStatusEnum = pgEnum('ScheduledTweetStatus', ['PENDING', 'POSTED', 'FAILED']);
 export const roleEnum = pgEnum('Role', ['user', 'assistant']);
@@ -53,13 +53,25 @@ export const xAccounts = pgTable('XAccount', {
 
 export const tweets = pgTable('Tweet', {
   id: text('id').primaryKey().$defaultFn(() => uuidv4()),
+  user_id: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
   status: tweetStatusEnum('status').notNull(),
   dateScheduled: timestamp('dateScheduled', { mode: 'date' }).notNull(),
   img: text('img'),
   created_at: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
-  updated_at: timestamp('updated_at', { mode: 'date' }).defaultNow().notNull(),
-});
+  updated_at: timestamp('updated_at', { mode: 'date' }).defaultNow().$onUpdateFn(() => new Date()).notNull(),
+}, (t) => [
+  index('Tweet_user_status_idx').on(t.user_id, t.status),
+]);
+
+export const tweetsRelations = relations(tweets, ({ one }) => ({
+  user: one(users, {
+    fields: [tweets.user_id],
+    references: [users.id],
+  }),
+}));
 
 export const conversations = pgTable('Conversation', {
   id: text('id').primaryKey().$defaultFn(() => uuidv4()),

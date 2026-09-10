@@ -9,7 +9,7 @@ import {
   logoutUser,
   issueTokenPair,
 } from "./auth.service.js";
-import { redisClient } from "../../shared/utils/redis-client.js";
+import { keydbClient } from "../../shared/utils/keydb-client.js";
 import { sendResponse } from "../../shared/utils/response.js";
 import { generateAccessToken, REFRESH_TOKEN_TTL } from "../../shared/lib/jwt.js";
 import { getUserProfile } from "../user/user.service.js";
@@ -32,7 +32,7 @@ export async function redirectToTwitterAuth(_req: Request, res: Response) {
   const { codeVerifier, codeChallenge } = await generatePKCE();
   const state = generateState();
 
-  await redisClient.set(oauthKey(state), codeVerifier, { EX: OAUTH_TTL });
+  await keydbClient.set(oauthKey(state), codeVerifier, { EX: OAUTH_TTL });
 
   const authUrl = await getAuthorizationUrl(state, codeVerifier, codeChallenge);
   return res.redirect(authUrl);
@@ -50,11 +50,11 @@ export async function OAuthCallback(req: Request, res: Response) {
       throw new AuthenticationError("Missing OAuth state");
     }
 
-    const codeVerifier = await redisClient.get(oauthKey(state));
+    const codeVerifier = await keydbClient.get(oauthKey(state));
     if (!codeVerifier) {
       throw new AuthenticationError("Login session expired. Please try again.");
     }
-    await redisClient.del(oauthKey(state));
+    await keydbClient.del(oauthKey(state));
 
     const user = await handleOAuthCallback(code as string, codeVerifier, req.sessionID);
     const { refreshToken } = await issueTokenPair(user);
@@ -80,7 +80,7 @@ export async function refreshAccessToken(req: Request, res: Response) {
 
 export async function logout(req: Request, res: Response) {
   if (req.sessionID) {
-    await redisClient.del(`session:${req.sessionID}`);
+    await keydbClient.del(`session:${req.sessionID}`);
   }
   const rawToken = req.cookies?.[COOKIE_NAME]
   await logoutUser(rawToken);

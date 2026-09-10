@@ -1,8 +1,13 @@
 import { createServer } from "http";
 import app from "./app.js";
-import { redisClient } from "./shared/utils/redis-client.js";
+import { keydbClient } from "./shared/utils/keydb-client.js";
 import { tweetReplyQueue, worker } from "./features/tweet-reply/tweet-reply.queue.js";
 import { chatQueue, worker as chatWorker } from "./features/chat/chat.queue.js";
+import {
+  getPostQueue,
+  startPostWorker,
+  closePostQueue,
+} from "./features/post/post.queue.js";
 import { SocketService } from "./shared/services/socket.service.js";
 
 const PORT = process.env.PORT || 8080;
@@ -30,6 +35,19 @@ chatWorker.on("completed", (job) => {
 chatWorker.on("failed", (job, err) => {
   console.error(`Chat job ${job?.id} failed: ${err}`);
 });
+
+const postWorker = startPostWorker();
+
+postWorker.on("completed", (job) => {
+  console.log(`Scheduled post job completed: ${job.id}`);
+});
+
+postWorker.on("failed", (job, err) => {
+  console.error(`Scheduled post job ${job?.id} failed: ${err}`);
+});
+
+// Ensure queue is created for shutdown close
+getPostQueue();
 
 const httpServer = createServer(app);
 SocketService.init(httpServer);
@@ -78,8 +96,11 @@ const shutdown = async (_sig: string) => {
     await chatQueue.close();
     console.log("Closed chat queue");
 
-    await redisClient.quit();
-    console.log("Closed redis client");
+    await closePostQueue();
+    console.log("Closed schedule post queue");
+
+    await keydbClient.quit();
+    console.log("Closed KeyDB client");
     process.exit(0);
   } catch (error) {
     console.error("Error during shutdown");
