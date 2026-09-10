@@ -84,7 +84,7 @@ test("schedulePost inserts tweet and enqueues delayed job", async () => {
   assert.equal(insertScheduled.mock.callCount(), 1);
   assert.equal(enqueue.mock.callCount(), 1);
 
-  const [jobName, jobData, jobOpts] = enqueue.mock.calls[0].arguments as [
+  const [jobName, jobData, jobOpts] = enqueue.mock.calls[0].arguments as unknown as [
     string,
     { tweetId: string; userId: string; message: string },
     { jobId: string; delay: number },
@@ -112,7 +112,7 @@ test("listScheduledPosts returns deps result", async () => {
   const listByUser = mock.fn(async () => [scheduledTweet]);
   const result = await listScheduledPosts("user-1", { listByUser });
   assert.equal(result.length, 1);
-  assert.equal(listByUser.mock.calls[0].arguments[0], "user-1");
+  assert.equal((listByUser.mock.calls[0].arguments as unknown as [string])[0], "user-1");
 });
 
 test("cancelScheduledPost removes job and marks cancelled", async () => {
