@@ -1,11 +1,11 @@
-import { redisClient } from "../../shared/utils/redis-client.js"
+import { keydbClient } from "../../shared/utils/keydb-client.js";
 import crypto from "crypto";
 import { Tokens } from "../../shared/types/auth.js";
 import { createUser } from "../user/user.service.js";
 import { generateAccessToken, generateRefreshToken, hashToken } from "../../shared/lib/jwt.js";
 import { createUserInput } from "../../shared/types/user.js";
 import { createXAccount, getXUserDetails } from "../x-account/x-account.service.js";
-import { deleteRefreshToken, getRefreshTokenOwner, storeRefreshToken } from "../../shared/lib/redis.js";
+import { deleteRefreshToken, getRefreshTokenOwner, storeRefreshToken } from "../../shared/lib/keydb.js";
 import { UnauthorizedError } from "../../shared/lib/errors.js";
 import { getOAuth2Helper, generateCodeVerifier, generateCodeChallenge } from "../../shared/services/x-client.factory.js";
 
@@ -27,7 +27,7 @@ export async function getAuthorizationUrl(state: string, codeVerifier: string, c
 
 export async function saveXTokens({ sessionID, tokens }: { sessionID: string; tokens: Tokens }) {
   try {
-    await redisClient.set(
+    await keydbClient.set(
       `session:${sessionID}`,
       JSON.stringify(tokens)
     );

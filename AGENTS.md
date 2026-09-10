@@ -4,7 +4,7 @@
 
 Node.js/TypeScript backend (ES modules) powering an X (Twitter) bot with AI chat, automated tweet replies, and user management.
 
-**Stack:** Express 5, Prisma 7, PostgreSQL + pgvector, Redis/BullMQ, Socket.io, Vercel AI SDK, Joi validation.
+**Stack:** Express 5, Prisma 7, PostgreSQL + pgvector, KeyDB/Valkey (Redis protocol) + BullMQ, Socket.io, Vercel AI SDK, Joi validation.
 
 ## Commands
 
@@ -59,7 +59,7 @@ Each feature in `src/features/<name>/` contains:
 - `middleware/` — Express middleware (auth, error handler, loggers)
 - `services/` — Cross-cutting services (AI, S3, Socket.io, X API)
 - `types/` — Global TypeScript declarations
-- `utils/` — Pure utility functions (response, validate, logger, redis)
+- `utils/` — Pure utility functions (response, validate, logger, keydb)
 
 ## Code Style
 
@@ -98,7 +98,7 @@ Each feature in `src/features/<name>/` contains:
 |---------|-----------|---------|
 | Files | kebab-case | `auth.controller.ts` |
 | Directories | kebab-case | `tweet-reply/`, `x-account/` |
-| Functions/variables | camelCase | `sendResponse`, `redisClient` |
+| Functions/variables | camelCase | `sendResponse`, `keydbClient` |
 | Classes | PascalCase | `AIService`, `AppError` |
 | Interfaces/types | PascalCase | `ChatJobData`, `Tokens` |
 | Constants | UPPER_SNAKE_CASE | `INSTRUCTIONS`, `SECRET_KEY` |
