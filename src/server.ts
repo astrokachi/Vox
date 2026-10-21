@@ -12,8 +12,8 @@ import { SocketService } from "./shared/services/socket.service.js";
 
 const PORT = process.env.PORT || 8080;
 
-if (!process.env.GITHUB_TOKEN) {
-  console.error("GITHUB_TOKEN is not set.");
+if (!process.env.GEMINI_API_KEY) {
+  console.error("GEMINI_API_KEY is not set.");
 }
 
 if (!process.env.X_CLIENT_ID) {

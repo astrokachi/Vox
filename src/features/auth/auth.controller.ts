@@ -62,6 +62,7 @@ export async function OAuthCallback(req: Request, res: Response) {
     res.cookie(COOKIE_NAME, refreshToken, COOKIE_OPTIONS);
     return res.redirect(`${process.env.CLIENT_URL!}/`);
   } catch (error: any) {
+    console.error("OAuth callback failed:", error);
     const message = error?.message || "Authentication failed";
     return res.redirect(
       `${process.env.CLIENT_URL!}/login?error=${encodeURIComponent(message)}`,
