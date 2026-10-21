@@ -51,8 +51,6 @@ export async function getUserAccessToken(userId: string): Promise<string> {
     const bufferMs = 30 * 60 * 1000;
     const isExpired = xAccount.token_expires_at && xAccount.token_expires_at.getTime() < now.getTime() + bufferMs;
 
-    console.log("Access token", xAccount.access_token);
-
     if (isExpired && xAccount.refresh_token) {
       try {
         const oauth2 = getOAuth2Helper();
