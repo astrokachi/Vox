@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>x-bot System Map</title>
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --surface-2: #f3f1ec; --text: #1d1c1a; --muted: #6b675f;
+  --border: #e3dfd6; --accent: #2f5bd3; --accent-soft: #e6ecfb; --ok: #1f7a4d; --warn: #a15c00;
+  --bad: #b3261e; --bad-soft: #fbe9e7; --warn-soft: #fdf1df; --ok-soft: #e3f3ea; --code: #f1eee8;
+  --hl: #fff3b0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131312; --surface: #1c1c1a; --surface-2: #242421; --text: #ecebe6; --muted: #a29e94;
+    --border: #34332f; --accent: #8aa8ff; --accent-soft: #1f2a46; --ok: #6fd3a0; --warn: #f0b45a;
+    --bad: #ff8a80; --bad-soft: #3a1f1d; --warn-soft: #3a2d17; --ok-soft: #173025; --code: #262522;
+    --hl: #4a4220;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131312; --surface: #1c1c1a; --surface-2: #242421; --text: #ecebe6; --muted: #a29e94;
+  --border: #34332f; --accent: #8aa8ff; --accent-soft: #1f2a46; --ok: #6fd3a0; --warn: #f0b45a;
+  --bad: #ff8a80; --bad-soft: #3a1f1d; --warn-soft: #3a2d17; --ok-soft: #173025; --code: #262522;
+  --hl: #4a4220;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); max-width: 1280px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 16px; border-right: 1px solid var(--border); font-size: 14px; }
+nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; }
+nav.toc a:hover { color: var(--text); }
+nav.toc .brand { font-weight: 700; color: var(--text); margin-bottom: 12px; font-size: 15px; }
+main { padding: 32px 40px 80px; min-width: 0; }
+header.top { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 8px; }
+h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 22px; margin: 48px 0 12px; padding-top: 8px; letter-spacing: -0.005em; }
+h3 { font-size: 17px; margin: 28px 0 8px; }
+.sub { color: var(--muted); margin: 0; }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
+.chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; color: var(--muted); }
+.toolbar { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.toolbar input { flex: 1; min-width: 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; }
+button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent-soft); border-color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.grid .card { margin: 0; }
+.card h4 { margin: 0 0 6px; font-size: 16px; }
+.card p { margin: 6px 0; }
+.card.flash { outline: 2px solid var(--accent); }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; padding: 1px 7px; border-radius: 4px; vertical-align: 1px; }
+.v { background: var(--ok-soft); color: var(--ok); }
+.i { background: var(--warn-soft); color: var(--warn); }
+.tight { background: var(--bad-soft); color: var(--bad); }
+.moderate { background: var(--warn-soft); color: var(--warn); }
+.loose { background: var(--ok-soft); color: var(--ok); }
+.sev-high { border-left: 4px solid var(--bad); }
+.sev-med { border-left: 4px solid var(--warn); }
+.sev-low { border-left: 4px solid var(--border); }
+.callout { background: var(--accent-soft); border-radius: 10px; padding: 14px 18px; margin: 16px 0; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { background: var(--surface-2); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tr.dim { opacity: 0.35; }
+tr.lit { background: var(--hl); }
+.diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin: 12px 0 4px; overflow-x: auto; }
+.diagram pre.mermaid { margin: 0; text-align: center; background: transparent; }
+.caption { color: var(--muted); font-size: 14px; margin: 4px 0 16px; }
+details { margin: 6px 0; }
+details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+details ul { margin: 6px 0; padding-left: 20px; font-size: 14px; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.panel { background: var(--surface-2); border-radius: 10px; padding: 12px 16px; margin: 8px 0 16px; min-height: 48px; font-size: 15px; }
+ol.steps li, ul.tight-list li { margin: 4px 0; }
+.hidden-by-search { display: none !important; }
+mark { background: var(--hl); color: inherit; padding: 0 1px; }
+.timeline { border-left: 2px solid var(--border); margin: 12px 0 12px 6px; padding-left: 18px; }
+.timeline div { position: relative; margin: 10px 0; }
+.timeline div::before { content: ""; position: absolute; left: -24px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.timeline b { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+.bar { height: 10px; background: var(--accent); border-radius: 3px; display: inline-block; vertical-align: middle; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { display: none; }
+  main { padding: 16px 16px 60px; }
+  h1 { font-size: 24px; }
+  .grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <div class="brand">x-bot system map</div>
+  <a href="#walkthrough">1. Design walkthrough</a>
+  <a href="#bigpicture">2. Big picture</a>
+  <a href="#components">3. Components</a>
+  <a href="#flows">4. Flows</a>
+  <a href="#coupling">5. Coupling</a>
+  <a href="#external">6. External world</a>
+  <a href="#failure">7. Failure and scaling</a>
+  <a href="#tradeoffs">8. Trade-offs</a>
+  <a href="#run">9. Run and deploy</a>
+  <a href="#data">10. Data</a>
+  <a href="#conventions">11. Conventions</a>
+  <a href="#history">12. History</a>
+  <a href="#risks">13. Risks and open questions</a>
+  <a href="#glossary">14. Glossary</a>
+</nav>
+
+<main>
+<header class="top">
+  <h1>x-bot backend</h1>
+  <p class="sub">A Node.js API that helps X (Twitter) users draft posts with AI, publish or schedule them, and send AI replies to tweets.</p>
+  <div class="meta">
+    <span class="chip">Generated 2026-10-11</span>
+    <span class="chip">Commit <span class="mono">19c3ae8</span> (branch <span class="mono">post</span>) + 1 uncommitted line in auth.controller.ts</span>
+    <span class="chip">~60 source files, ~3,900 lines</span>
+    <span class="chip"><span class="tag v">verified</span> = read in code &nbsp; <span class="tag i">inferred</span> = reasoned from names, docs, or defaults</span>
+  </div>
+</header>
+
+<div class="toolbar">
+  <input id="search" type="search" placeholder="Filter cards and table rows (for example: KeyDB, refresh, Memory)" aria-label="Search">
+  <button id="theme" type="button" aria-label="Toggle theme">Theme</button>
+</div>
+
+<!-- ============================================================ -->
+<section id="walkthrough">
+<h2>1. Design walkthrough</h2>
+
+<div class="callout">
+<strong>If I had to explain this in one minute.</strong>
+x-bot is one Node.js process that is an Express API, a Socket.io server, and three BullMQ workers at the same time.
+Users log in with X (OAuth 2.0 with PKCE), and the backend keeps their X tokens so it can post for them.
+The main feature is a chat that turns rough ideas into tweet drafts: the API saves the prompt, puts a job on a queue, and a worker calls GPT-4.1 through GitHub Models and pushes the answer back over Socket.io.
+Users can also publish a post now, schedule it for later (a delayed queue job), or give a list of tweet URLs and let the bot reply to each one at random times.
+Postgres (with pgvector) holds users, conversations, scheduled tweets and chat "memory"; KeyDB holds sessions, refresh tokens, OAuth state and all queues.
+</div>
+
+<h3>1.1 Problem and requirements</h3>
+<p><strong>Functional requirements</strong> <span class="tag v">verified</span> (from the route files):</p>
+<ul class="tight-list">
+  <li><strong>Sign in with X.</strong> <code>GET /auth/authorize</code>, <code>GET /auth/callback</code>, <code>POST /auth/refresh</code>, <code>POST /auth/logout</code>.</li>
+  <li><strong>Assisted tweet drafting (chat).</strong> Start a conversation, add prompts, ask for 1 or 3 options (<code>SINGLE</code> / <code>MULTIPLE</code>), refine one answer into a thread of revisions. Routes under <code>/api/chat</code> and <code>/api/conversations</code>.</li>
+  <li><strong>Publish now</strong> with up to N images (<code>POST /api/post</code>), and <strong>schedule / list / cancel</strong> text posts (<code>/api/post/schedule</code>, <code>/api/post/scheduled</code>).</li>
+  <li><strong>Bulk AI replies.</strong> <code>POST /api/reply</code> takes tweet URLs and a time window; the bot replies to each tweet at a random time inside the window.</li>
+  <li><strong>Profile.</strong> <code>GET /user/profile</code>.</li>
+</ul>
+<p><strong>Non-functional requirements</strong> <span class="tag i">inferred</span>:</p>
+<ul class="tight-list">
+  <li><em>Latency hiding.</em> LLM calls take seconds, so chat answers are asynchronous (queue + Socket.io) and the HTTP call returns at once.</li>
+  <li><em>Reliability for scheduled posts.</em> Retries (3 attempts, exponential backoff from 2 s) and a final <code>FAILED</code> status.</li>
+  <li><em>"Human-like" timing.</em> Replies are spread at random over up to 6 hours (<code>src/shared/utils/time-randomizer.ts</code>).</li>
+  <li><em>Security.</em> Short JWT access tokens (15 min), refresh tokens stored only as SHA-256 hashes, PKCE for OAuth.</li>
+  <li><em>Low cost.</em> GitHub Models as the LLM provider suggests a free or cheap tier is the target.</li>
+</ul>
+
+<h3>1.2 Scale and constraints</h3>
+<p>Scale is not documented. The code shows a small, single-instance design <span class="tag v">verified</span>:</p>
+<ul class="tight-list">
+  <li>Worker concurrency: chat <code>5</code>, schedule-post <code>1</code>, tweet-reply <code>1</code> (<code>chat.queue.ts:133</code>, <code>post.queue.ts:351</code>, <code>tweet-reply.queue.ts:594</code>).</li>
+  <li>Chat context: the last 10 messages plus the top 5 memory rows by vector distance.</li>
+  <li>Pagination: keyset for chat turns; in-memory slicing for the conversation list.</li>
+  <li>No API rate limiting, no horizontal scaling setup (no Socket.io Redis adapter), one Postgres pool with default size.</li>
+</ul>
+
+<h3>1.3 High-level design</h3>
+<p>The browser client talks to one Express app over HTTPS with a Bearer JWT. The same HTTP server hosts Socket.io for push events. Slow or deferred work goes onto three BullMQ queues stored in KeyDB; workers in the same process consume them. Workers call two external APIs: the X API (through the official <code>@xdevplatform/xdk</code> SDK) and GitHub Models (through the Vercel AI SDK with an OpenAI-compatible adapter). Postgres is the source of truth for users, X tokens, tweets and chat; KeyDB holds short-lived auth state and the queues.</p>
+
+<h3>1.4 One request end to end</h3>
+<p>The most important action is "send a chat prompt". See the <a href="#flow-chat">chat sequence diagram</a>. In short:</p>
+<ol class="steps">
+  <li><strong>Sync.</strong> <code>POST /api/chat/:id/prompt</code> → <code>authMiddleware</code> verifies the JWT locally (no DB call).</li>
+  <li><strong>Sync.</strong> <code>chat.service.addMessageToConversation</code> checks ownership, inserts a <code>MessageGroup</code> (a turn) and the user <code>Message</code>, reads the last 10 messages (3 to 4 SQL round trips, no transaction).</li>
+  <li><strong>Sync.</strong> <code>chatQueue.add</code> writes the job to KeyDB. The client gets <code>201</code> with the turn, without options.</li>
+  <li><strong>Async.</strong> The worker emits <code>message:typing</code>, embeds the prompt (<em>external call 1</em>), runs a pgvector query, calls GPT-4.1 (<em>external call 2</em>), inserts 1 or 3 assistant messages and emits <code>message:received</code> for each.</li>
+  <li><strong>Async, fire-and-forget.</strong> The worker embeds each option and the prompt and writes them to <code>Memory</code> (<em>external calls 3 to 6</em>).</li>
+</ol>
+<p>Almost all latency and failure risk of a chat turn comes from GitHub Models. The HTTP part depends only on Postgres and KeyDB.</p>
+
+<h3>1.5 Data model and ownership</h3>
+<p>Postgres is the source of truth for everything durable. KeyDB holds copies and short-lived state. The one important copy is the <strong>X access/refresh token pair</strong>: it lives in both <code>XAccount</code> (Postgres) and <code>session:&lt;sessionID&gt;</code> (KeyDB), and the two copies are refreshed by different code paths that do not sync. See <a href="#data">Data</a> and <a href="#lineage">token lineage</a>.</p>
+
+<h3>1.6 The external world</h3>
+<p>The system depends on four outside systems at runtime: the X API, GitHub Models, a managed Postgres with pgvector, and a managed Redis-protocol store (KeyDB/Valkey). One browser client (at <code>CLIENT_URL</code>) is the only consumer. AWS S3 code exists but nothing calls it. See <a href="#external">External world</a>.</p>
+
+<h3>1.7 Coupling</h3>
+<p>This is a <strong>modular monolith</strong>: features live in separate folders, but they share one database schema module, one KeyDB client, and in-process singletons. The tightest hidden link is between <code>tweet-reply</code> and <code>auth</code>: they share the KeyDB key format <code>session:&lt;id&gt;</code> and a direct import of <code>xTokenRefresh</code>. The chat worker is tied to the HTTP process because it emits through the in-process <code>SocketService</code> singleton. See <a href="#coupling">Coupling</a>.</p>
+
+<h3>1.8 Failure modes (summary)</h3>
+<ul class="tight-list">
+  <li><strong>KeyDB down</strong>: login, token refresh, all queues and the express-session store fail. Chat prompts leave an empty turn in Postgres because the DB writes happen before <code>queue.add</code>.</li>
+  <li><strong>GitHub Models slow or down</strong>: chat jobs retry up to 3 × 4 times (BullMQ × AI SDK); the client gets a <code>message:error</code> on each failed attempt.</li>
+  <li><strong>X API down</strong>: publish-now returns 500; scheduled posts retry then become <code>FAILED</code>; bulk replies are lost without retry.</li>
+  <li>No explicit timeouts exist on X or LLM calls <span class="tag v">verified</span> (none in code; SDK defaults apply).</li>
+</ul>
+
+<h3>1.9 Bottlenecks and scaling</h3>
+<p>The first limit will be the <strong>GitHub Models rate limit</strong> <span class="tag i">inferred</span>: each chat turn makes 1 chat call and 2 to 5 embedding calls. Next is the <strong>single process</strong>: you cannot add a second instance without a Socket.io Redis adapter, because workers emit to sockets that may live on another instance. First change: move embedding writes to one batched call and add the Socket.io Redis adapter; both are small.</p>
+
+<h3>1.10 Trade-offs and 1.11 weak spots</h3>
+<p>See <a href="#tradeoffs">Trade-offs</a> and <a href="#risks">Risks</a>. The most serious weak spots are: logout never revokes refresh tokens, the bulk-reply route has no JWT check and likely never finds a session, X access tokens are printed to the log, and deleting a used conversation likely fails because of the <code>Memory</code> foreign key.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="bigpicture">
+<h2>2. Big picture</h2>
+<h3>System context</h3>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  user(["X user in a browser"])
+  web["Web client at CLIENT_URL"]
+  subgraph sys["x-bot backend (one Node process)"]
+    api["Express API + Socket.io + BullMQ workers"]
+  end
+  pg[("PostgreSQL + pgvector")]
+  kdb[("KeyDB / Valkey")]
+  xapi["X API v2 via xdk"]
+  gh["GitHub Models: gpt-4.1 + embeddings"]
+  s3["AWS S3 (code only, unused)"]
+  user --> web
+  web -->|"HTTPS JSON + Bearer JWT"| api
+  api -->|"Socket.io events"| web
+  user -->|"OAuth consent"| xapi
+  xapi -->|"redirect to /auth/callback"| api
+  api -->|"SQL over pg pool"| pg
+  api -->|"sessions, tokens, queues"| kdb
+  api -->|"OAuth2, posts, media, users/me"| xapi
+  api -->|"chat completions + embeddings"| gh
+  api -.->|"presigned PUT, dead code"| s3
+</pre></div>
+<p class="caption">Notice that X appears twice: as the identity provider in the login redirect and as the API the backend posts to.</p>
+
+<h3>Components inside the process</h3>
+<div class="diagram"><pre class="mermaid">
+flowchart TB
+  http["Express app (app.ts)"]
+  sock["SocketService"]
+  auth["auth"]
+  chat["chat + conversation"]
+  post["post"]
+  reply["tweet-reply"]
+  xacc["x-account"]
+  wchat["chat-response worker"]
+  wpost["schedule-post worker"]
+  wreply["tweet-reply worker"]
+  ai["AIService"]
+  xs["XService"]
+  db[("db + schema.ts")]
+  kdb[("keydbClient + BullMQ")]
+  http --> auth & chat & post & reply
+  chat -->|"queue.add"| kdb
+  post -->|"delayed job"| kdb
+  reply -->|"delayed jobs"| kdb
+  kdb --> wchat & wpost & wreply
+  wchat --> ai
+  wchat -->|"emitToConversation"| sock
+  wreply --> ai & xs
+  wpost --> xacc
+  post --> xacc
+  auth --> xacc
+  xacc --> xs
+  auth & chat & post & xacc & wchat & wpost --> db
+  click auth "#comp-auth"
+  click chat "#comp-chat"
+  click post "#comp-post"
+  click reply "#comp-reply"
+  click xacc "#comp-xacc"
+  click wchat "#comp-chat"
+  click wpost "#comp-post"
+  click wreply "#comp-reply"
+  click ai "#comp-ai"
+  click xs "#comp-xs"
+  click sock "#comp-socket"
+  click http "#comp-http"
+</pre></div>
+<p class="caption">Notice that every worker runs inside the HTTP process (<code>src/server.ts</code> starts them). Click a node to jump to its card.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="components">
+<h2>3. Components</h2>
+<div class="grid">
+
+<div class="card searchable" id="comp-http">
+  <h4>HTTP server and bootstrap</h4>
+  <p>Builds the Express app (logging, cookies, JSON, CORS for one origin, express-session in KeyDB), mounts routers, starts Socket.io and all three workers, and handles shutdown. <span class="tag v">verified</span></p>
+  <details><summary>Files and entry points</summary><ul>
+    <li><code>src/server.ts</code> — process entry, workers, signals</li>
+    <li><code>src/app.ts</code> — middleware order and route mounts</li>
+    <li><code>src/shared/middleware/*</code> — morgan→pino request log, global error handler</li>
+  </ul></details>
+</div>
+
+<div class="card searchable" id="comp-auth">
+  <h4>auth</h4>
+  <p>Sign in with X using OAuth 2.0 + PKCE. Upserts <code>User</code> (the user id is the X user id) and <code>XAccount</code>. Issues a 15-minute JWT and a 7-day opaque refresh token (hashed in KeyDB, sent as an httpOnly cookie on path <code>/auth/refresh</code>). <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul>
+    <li><code>src/features/auth/auth.controller.ts</code>, <code>auth.service.ts</code>, <code>auth.route.ts</code></li>
+    <li><code>src/shared/lib/jwt.ts</code>, <code>src/shared/lib/keydb.ts</code></li>
+    <li><code>src/shared/middleware/auth.middleware.ts</code></li>
+  </ul></details>
+</div>
+
+<div class="card searchable" id="comp-chat">
+  <h4>chat + conversation</h4>
+  <p>Assisted tweet drafting. A <em>turn</em> (<code>MessageGroup</code>) holds one user question and its assistant options. A <em>refinement</em> is a child turn whose <code>parent_message_id</code> points to an assistant message. The worker generates answers and pushes them over Socket.io. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul>
+    <li><code>src/features/chat/chat.service.ts</code> — DB writes, keyset pagination, recursive CTE for threads</li>
+    <li><code>src/features/chat/chat.queue.ts</code> — <code>chat-response</code> queue and worker (concurrency 5)</li>
+    <li><code>src/features/chat/chat.turns.ts</code> — pure helpers (tested)</li>
+    <li><code>src/features/conversation/*</code> — CRUD on <code>Conversation</code></li>
+  </ul></details>
+</div>
+
+<div class="card searchable" id="comp-post">
+  <h4>post</h4>
+  <p>Publish now (text + images, uploaded in memory with multer, sent to X as base64) and schedule text posts. Scheduling inserts a <code>Tweet</code> row and a delayed BullMQ job with <code>jobId = tweet.id</code>, so cancel can remove the job. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul>
+    <li><code>src/features/post/post.service.ts</code> — dependency-injected for tests</li>
+    <li><code>src/features/post/post.queue.ts</code> — <code>schedule-post</code> worker (concurrency 1), marks <code>SENT</code> / <code>FAILED</code></li>
+    <li><code>src/features/post/post.validation.ts</code> — Joi + multer image filter</li>
+  </ul></details>
+</div>
+
+<div class="card searchable" id="comp-reply">
+  <h4>tweet-reply</h4>
+  <p>Takes tweet URLs and a time window, spreads jobs at random delays, then for each: reads the tweet (app bearer token), generates a short Web3-style reply with GPT-4.1, and posts it as a reply with the user's token from the KeyDB session. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul>
+    <li><code>src/features/tweet-reply/tweet-reply.service.ts</code>, <code>tweet-reply.queue.ts</code></li>
+    <li><code>src/shared/utils/time-randomizer.ts</code>, <code>time-parser.ts</code></li>
+    <li><code>src/shared/const.ts</code> — <code>INSTRUCTIONS</code> system prompt</li>
+  </ul></details>
+</div>
+
+<div class="card searchable" id="comp-xacc">
+  <h4>x-account</h4>
+  <p>Stores and returns a user's X access token. <code>getUserAccessToken</code> refreshes it when it expires in under 30 minutes and saves the new pair. Used by publish and the schedule worker. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul><li><code>src/features/x-account/x-account.service.ts</code></li></ul></details>
+</div>
+
+<div class="card searchable" id="comp-ai">
+  <h4>AIService</h4>
+  <p>Wraps the Vercel AI SDK with an OpenAI-compatible provider pointed at <code>BASE_URL</code> (GitHub Models). Chat model <code>gpt-4.1</code>, embeddings <code>openai/text-embedding-3-small</code> (1536 dims). Also does RAG: top-5 <code>Memory</code> rows by cosine distance per conversation. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul><li><code>src/shared/services/ai.service.ts</code></li><li><code>src/shared/prompt-templates.ts</code> (<code>CHAT_SYSTEM_PROMPT</code>; <code>TWEET_PROMPTS</code> is unused)</li></ul></details>
+</div>
+
+<div class="card searchable" id="comp-xs">
+  <h4>XService + x-client.factory</h4>
+  <p>The adapter for the X API. It creates xdk clients (OAuth2 user token or app bearer token), uploads media, creates posts and replies, reads a post by id, and reads <code>users/me</code>. The OAuth2 helper is a module singleton. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul><li><code>src/shared/services/x.service.ts</code></li><li><code>src/shared/services/x-client.factory.ts</code> — scopes: tweet.read/write, users.read, users.email, media.write, offline.access</li></ul></details>
+</div>
+
+<div class="card searchable" id="comp-socket">
+  <h4>SocketService</h4>
+  <p>Singleton Socket.io server. Checks the JWT on handshake, then lets a socket join <code>conversation:&lt;id&gt;</code> rooms. Workers emit <code>message:typing</code>, <code>message:received</code>, <code>message:refined</code>, <code>message:error</code>. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul><li><code>src/shared/services/socket.service.ts</code></li></ul></details>
+</div>
+
+<div class="card searchable" id="comp-data">
+  <h4>Data access</h4>
+  <p>Drizzle ORM over a <code>pg</code> pool, one schema file for all tables. Migrations are hand-written SQL applied by <code>scripts/run-migration.ts</code>, tracked in a <code>_migrations</code> table. <span class="tag v">verified</span></p>
+  <details><summary>Files</summary><ul><li><code>src/shared/db/index.ts</code>, <code>schema.ts</code></li><li><code>drizzle/migrations/000*.sql</code></li><li><code>src/shared/utils/keydb-client.ts</code>, <code>src/shared/lib/keydb-url.ts</code></li></ul></details>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="flows">
+<h2>4. Flows</h2>
+
+<h3 id="flow-chat">4.1 Chat prompt (the core path)</h3>
+<div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant C as Web client
+  participant A as Express chat route
+  participant P as Postgres
+  participant K as KeyDB BullMQ
+  participant W as chat-response worker
+  participant G as GitHub Models
+  participant S as Socket.io
+  C->>S: connect with JWT, emit conversation:join
+  C->>A: POST /api/chat/:id/prompt
+  A->>A: authMiddleware verifies JWT
+  A->>P: owner check, insert MessageGroup and user Message, read last 10
+  A->>K: chatQueue.add
+  A-->>C: 201 turn without options
+  K->>W: deliver job
+  W->>S: message:typing
+  W->>G: embed prompt
+  W->>P: top 5 Memory rows by vector distance
+  W->>G: generateText gpt-4.1
+  W->>P: insert 1 or 3 assistant Messages
+  W->>S: message:received per option
+  S-->>C: events in room conversation:id
+  W-)G: embed each message, then insert Memory
+</pre></div>
+<p class="caption">Notice that the client must join the room before the worker emits, or it misses the push and must refetch with <code>GET /api/chat/:id/messages</code>.</p>
+
+<h3>4.2 Sign in with X</h3>
+<div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant B as Browser
+  participant A as Express auth
+  participant K as KeyDB
+  participant X as X OAuth2 and API
+  participant P as Postgres
+  B->>A: GET /auth/authorize
+  A->>K: SET oauth:state = codeVerifier, 600 s
+  A-->>B: 302 to X authorize URL with PKCE
+  B->>X: user consents
+  X-->>B: 302 to /auth/callback with code and state
+  B->>A: GET /auth/callback
+  A->>K: GET then DEL oauth:state
+  A->>X: exchange code for tokens
+  A->>K: SET session:sessionID = X tokens, no TTL
+  A->>X: users.getMe
+  A->>P: upsert User and XAccount
+  A->>K: store rtKey:hash and rtUser:id, 7 days
+  A-->>B: Set-Cookie refresh_token, 302 to CLIENT_URL
+  B->>A: POST /auth/refresh with cookie
+  A->>K: GET rtKey:hash
+  A->>P: read profile
+  A-->>B: 200 access JWT, 15 min
+</pre></div>
+<p class="caption">Notice that the X tokens are written to two places (steps 9 and 11), and only one of them has an expiry.</p>
+
+<h3>4.3 Schedule a post</h3>
+<div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant C as Web client
+  participant A as Express post route
+  participant P as Postgres
+  participant K as KeyDB BullMQ
+  participant W as schedule-post worker
+  participant X as X API
+  C->>A: POST /api/post/schedule
+  A->>P: insert Tweet with status SCHEDULED
+  A->>K: add job, jobId = tweet id, delay
+  A-->>C: 201 Tweet row
+  Note over K,W: job waits until scheduledAt
+  K->>W: deliver job
+  W->>P: read Tweet, skip unless SCHEDULED
+  W->>P: read XAccount, refresh token if near expiry
+  W->>X: posts.create
+  W->>P: set status SENT
+  Note over W,P: after 3 failed attempts, set FAILED
+</pre></div>
+<p class="caption">Notice the order "post to X, then update DB": if the DB update fails, the retry posts the tweet a second time.</p>
+
+<h3>4.4 Bulk AI replies (short)</h3>
+<ol class="steps">
+  <li><strong>Sync.</strong> <code>POST /api/reply</code> (no JWT check). Joi parses <code>maximumTime</code> such as <code>"2h"</code> to milliseconds.</li>
+  <li><strong>Sync.</strong> <code>getSessionTokens(req.sessionID)</code> reads <code>session:&lt;sessionID&gt;</code> from KeyDB; it throws if nothing is there.</li>
+  <li><strong>Sync.</strong> One delayed job per URL with random cumulative delays inside the window.</li>
+  <li><strong>Async.</strong> Worker re-reads the session tokens, gets the tweet text with the app bearer token, generates a reply, posts it with <code>in_reply_to_tweet_id</code>. Errors are caught and returned as a result, so BullMQ does not retry.</li>
+</ol>
+</section>
+
+<!-- ============================================================ -->
+<section id="coupling">
+<h2>5. Coupling</h2>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  client["Web client"]
+  api["HTTP routes"]
+  chat["chat service"]
+  wchat["chat worker"]
+  sock["SocketService"]
+  post["post + worker"]
+  reply["tweet-reply + worker"]
+  auth["auth"]
+  xacc["x-account"]
+  db[("Postgres schema.ts")]
+  kdb[("KeyDB")]
+  ext["X API + GitHub Models"]
+  client -->|"REST + JWT contract"| api
+  sock -.->|"socket events"| client
+  chat -.->|"BullMQ job"| wchat
+  wchat ==>|"in-process singleton"| sock
+  chat ==>|"shared tables + raw SQL"| db
+  wchat ==>|"writes Message, Memory"| db
+  post ==>|"getUserAccessToken"| xacc
+  reply ==>|"xTokenRefresh + session key"| auth
+  auth ==>|"createXAccount"| xacc
+  xacc ==>|"XAccount table"| db
+  auth ==>|"oauth, rtKey, session keys"| kdb
+  reply ==>|"reads session:id"| kdb
+  wchat ==>|"sync call inside job"| ext
+  post ==>|"sync call"| ext
+</pre></div>
+<p class="caption">Thick lines are tight, thin lines are moderate, dashed lines are loose or async. Notice that Postgres and KeyDB have the highest fan-in.</p>
+
+<p>Click a component to highlight its links and see its blast radius:</p>
+<div class="btnrow" id="coupling-buttons"></div>
+<div class="panel" id="coupling-panel">Select a component.</div>
+
+<div class="table-wrap"><table id="coupling-table">
+<thead><tr><th>From</th><th>To</th><th>Mechanism</th><th>Sync / async</th><th>Coupling kinds</th><th>Strength</th><th>If "To" fails</th></tr></thead>
+<tbody></tbody>
+</table></div>
+
+<h3>Judgment</h3>
+<ul class="tight-list">
+  <li><strong>Hot spots (fan-in).</strong> <code>src/shared/db/schema.ts</code> + <code>db</code> (used by 7 modules), <code>keydbClient</code> (sessions, OAuth state, refresh tokens, X tokens, all queues), <code>XService</code> (auth, x-account, post, tweet-reply). <span class="tag v">verified</span></li>
+  <li><strong>Fan-out.</strong> <code>chat.queue.ts</code> worker depends on Postgres, KeyDB, GitHub Models and Socket.io at once. <span class="tag v">verified</span></li>
+  <li><strong>Cycles.</strong> None found between modules. <code>chat.service</code> → <code>chat.queue</code> is one-way. <span class="tag v">verified</span> by reading imports.</li>
+  <li><strong>Modular or not?</strong> A modular monolith with leaks. Features are separated by folder, but <code>tweet-reply</code> reaches into <code>auth</code>'s KeyDB key format, two places hand-write raw SQL against table names (<code>chat.service.ts:524</code>, <code>ai.service.ts:850</code>), and the chat worker cannot run in a separate process without changing how it emits events.</li>
+  <li><strong>Co-change evidence.</strong> <code>auth.service.ts</code> and <code>auth.controller.ts</code> are the most-changed source files (21 and 18 commits). The XDK migration (2026-07-22) touched auth, post, tweet-reply and x-account in one series, which shows they all share the <code>XService</code> contract.</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="external">
+<h2>6. External world</h2>
+
+<h3>Integration map</h3>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph identity["Identity and social platform"]
+    xo["X OAuth2"]
+    xa["X API v2"]
+  end
+  subgraph ai["AI"]
+    gm["GitHub Models"]
+  end
+  subgraph infra["Data infrastructure"]
+    pg[("Postgres + pgvector")]
+    kv[("KeyDB / Valkey")]
+    s3["AWS S3"]
+  end
+  subgraph clients["Clients"]
+    web["Web client"]
+  end
+  auth["auth"] --> xo
+  xacc["x-account"] --> xo
+  xs["XService"] --> xa
+  aisvc["AIService"] --> gm
+  dbm["db module"] --> pg
+  kc["keydbClient + BullMQ"] --> kv
+  s3svc["s3.service (unused)"] -.-> s3
+  web --> api["Express + Socket.io"]
+</pre></div>
+<p class="caption">Notice that every external system has exactly one adapter module, except Postgres and KeyDB, which many modules use directly.</p>
+
+<p>Click an external system to see which internal parts use it and what breaks if it fails:</p>
+<div class="btnrow" id="ext-buttons"></div>
+<div class="panel" id="ext-panel">Select an external system.</div>
+
+<h3>External dependency table</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Name and type</th><th>Direction</th><th>Internal owner</th><th>Interface</th><th>Data crossing</th><th>Criticality</th><th>Failure behavior</th><th>Limits / cost</th><th>Substitutability</th></tr></thead>
+<tbody>
+<tr class="searchable"><td><strong>X OAuth 2.0</strong><br>identity provider</td><td>Browser redirect in; token exchange and refresh out</td><td><code>auth.service.ts</code>, <code>x-account.service.ts</code>, <code>x-client.factory.ts</code></td><td>OAuth 2.0 + PKCE via <code>@xdevplatform/xdk</code> 0.5.0; <code>X_CLIENT_ID</code>, <code>X_CLIENT_SECRET</code>; redirect <code>${APP_URL}/auth/callback</code> <span class="tag v">verified</span></td><td>In: access + refresh tokens, user id, name, username, avatar, email. <strong>Personal data.</strong></td><td>Login stops without it</td><td>No timeout, no retry. Errors redirect to <code>/login?error=…</code> <span class="tag v">verified</span></td><td>X app tier limits <span class="tag i">inferred</span></td><td>Hard: user id = X id, the product is X-specific</td></tr>
+<tr class="searchable"><td><strong>X API v2</strong><br>social platform API</td><td>Outbound</td><td><code>XService</code></td><td>xdk <code>Client</code>: <code>users.getMe</code>, <code>posts.create</code>, <code>posts.getById</code> (bearer <code>X_BEARER_TOKEN</code>), <code>media.upload</code> (base64 JSON) <span class="tag v">verified</span></td><td>Out: post text, images, reply target. In: tweet text and author name</td><td>Core for publish, schedule, reply</td><td>Publish: error to client. Schedule: 3 BullMQ attempts then <code>FAILED</code>. Reply: error swallowed, no retry. No idempotency key, so retries can double-post. <span class="tag v">verified</span></td><td>X API is paid per tier with low post caps and strict read caps <span class="tag i">inferred</span></td><td>Good adapter: only <code>XService</code> touches xdk types; <code>TweetData</code> shape leaks into job results</td></tr>
+<tr class="searchable"><td><strong>GitHub Models</strong><br>LLM + embeddings</td><td>Outbound</td><td><code>AIService</code></td><td>OpenAI-compatible HTTP at <code>BASE_URL</code> (<code>models.github.ai/inference</code> in <code>.env.example</code>), auth <code>GITHUB_TOKEN</code>, header <code>X-GitHub-Api-Version: 2022-11-28</code>; AI SDK <code>generateText</code> + <code>embed</code>, <code>maxRetries: 3</code> <span class="tag v">verified</span></td><td>Out: user prompts, recent chat history, retrieved memory, tweet text. In: generated text, 1536-dim vectors. <strong>User content leaves the system.</strong></td><td>Core for chat and replies</td><td>Chat: AI SDK retries × BullMQ retries, <code>message:error</code> event. RAG lookup failure is skipped. Memory writes are fire-and-forget. <span class="tag v">verified</span></td><td>Per-model request and token limits per day; low on free tier <span class="tag i">inferred</span></td><td>Easy: change <code>BASE_URL</code> + token + model names; AI SDK isolates the vendor</td></tr>
+<tr class="searchable"><td><strong>PostgreSQL + pgvector</strong><br>managed database</td><td>Outbound</td><td><code>src/shared/db</code> (used by 7 modules)</td><td><code>pg</code> pool via <code>DATABASE_URL</code>; <code>DIRECT_URL</code> is set but unused (Prisma leftover, suggests a pooled provider) <span class="tag i">inferred</span></td><td>All durable data, including <strong>X tokens in plaintext</strong></td><td>Everything except the reply worker</td><td>No retry, no statement timeout; errors bubble to 500 <span class="tag v">verified</span></td><td>Default pool size (10) <span class="tag i">inferred</span></td><td>Standard SQL, but pgvector <code>&lt;=&gt;</code> ties it to Postgres</td></tr>
+<tr class="searchable"><td><strong>KeyDB / Valkey</strong><br>Redis-protocol store</td><td>Outbound</td><td><code>keydb-client.ts</code> (node-redis) and BullMQ (ioredis, separate connections)</td><td><code>KEYDB_URL</code> (fallback <code>REDIS_URL</code>); <code>rediss://</code> for Aiven per <code>.env.example</code>; local <code>docker-compose.yml</code> runs KeyDB with AOF <span class="tag v">verified</span></td><td>OAuth state, refresh token hashes, <strong>X tokens</strong>, express sessions, all queue jobs (job data includes X tokens for replies)</td><td>Login, refresh, chat, schedule, reply all stop</td><td>node-redis reconnects by default; startup connect failure is only logged <span class="tag v">verified</span></td><td>Memory-bound; delayed jobs live here for up to the schedule horizon</td><td>Any Redis-protocol store works; that was the point of commit <code>4789a96</code></td></tr>
+<tr class="searchable"><td><strong>AWS S3</strong><br>object store</td><td>Would be outbound</td><td><code>s3.service.ts</code>, <code>lib/s3.ts</code></td><td>Presigned PUT, 60 s</td><td>None today</td><td>None: nothing imports it <span class="tag v">verified</span></td><td>—</td><td>—</td><td>Dead code. <code>lib/s3.ts</code> throws at import if AWS env vars are missing</td></tr>
+<tr class="searchable"><td><strong>Web client</strong><br>first-party SPA</td><td>Inbound</td><td>All routers, <code>SocketService</code></td><td>REST JSON envelope (<code>sendResponse</code>), Socket.io events, cookie on <code>/auth/refresh</code>; CORS allows only <code>CLIENT_URL</code> <span class="tag v">verified</span></td><td>Prompts, images, tweet URLs; profile and drafts back</td><td>The only consumer</td><td>Must refetch if it misses a socket event</td><td>—</td><td>Contract documented in <code>API.md</code> (partly stale)</td></tr>
+</tbody></table></div>
+
+<h3 id="lineage">Data lineage: X tokens (the most sensitive data)</h3>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  xo["X OAuth2 token endpoint"] --> cb["exchangeCodeForTokens"]
+  cb --> ks[("KeyDB session:sessionID, plain JSON, no TTL")]
+  cb --> xa[("Postgres XAccount, plaintext")]
+  xa --> gat["getUserAccessToken refreshes if near expiry"]
+  gat -->|"writes new pair"| xa
+  gat --> pw["publish + schedule worker"]
+  ks --> rj["reply jobs carry tokens in job data"]
+  rj --> rw["tweet-reply worker"]
+  rw -->|"xTokenRefresh on 401"| ks
+  pw --> xapi["X API"]
+  rw --> xapi
+</pre></div>
+<p class="caption">Notice the two copies with two independent refresh paths. If X rotates refresh tokens on use, a refresh on one side makes the other side's refresh token invalid. <span class="tag i">inferred</span></p>
+
+<h3>Data lineage: user content to the LLM</h3>
+<p>A prompt enters through <code>POST /api/chat/...</code>, is stored in <code>Message</code>, and is sent with the last 10 messages and up to 5 memory rows to GitHub Models. Every user prompt and every assistant option is also sent again to the embedding endpoint and stored as a <code>Memory</code> row with its vector. Memory is scoped to one conversation (query filters on <code>conversation_id</code>). <span class="tag v">verified</span></p>
+
+<h3>Trust boundaries</h3>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph net["Public internet"]
+    br["Browser"]
+  end
+  subgraph edge["Express edge"]
+    cors["CORS: CLIENT_URL only"]
+    jwt["authMiddleware: Bearer JWT"]
+    joi["Joi validation"]
+    open["/api/reply: no JWT check"]
+    sockauth["Socket handshake JWT, no room ownership check"]
+  end
+  subgraph stores["Data stores"]
+    pg[("Postgres")]
+    kv[("KeyDB")]
+  end
+  subgraph third["Third parties"]
+    xapi2["X API"]
+    gh["GitHub Models"]
+  end
+  br --> cors --> jwt --> joi --> pg
+  br --> open --> kv
+  br --> sockauth
+  joi --> kv
+  pg --> xapi2
+  pg --> gh
+</pre></div>
+<p class="caption">Notice the two weak crossings: <code>/api/reply</code> and Socket.io room joins.</p>
+<ul class="tight-list">
+  <li><strong>Checked.</strong> JWT on all <code>/api/chat</code>, <code>/api/conversations</code>, <code>/api/post</code>, <code>/user</code> routes; ownership checks in services (<code>requireConversation</code>, <code>findOwned</code>); PKCE + state for OAuth; image MIME filter. <span class="tag v">verified</span></li>
+  <li><strong>Not checked.</strong> <code>/api/reply</code> has no <code>authMiddleware</code> (<code>tweet-reply.route.ts:7</code>). <code>conversation:join</code> lets any authenticated socket join any room (<code>socket.service.ts:44</code>). No rate limiting. No upload size limit on multer. <code>take</code> query param is unbounded. <span class="tag v">verified</span></li>
+</ul>
+
+<h3>Compliance, ownership and vendor risk</h3>
+<ul class="tight-list">
+  <li><strong>Data leaving your control.</strong> User prompts and drafts go to GitHub Models (Microsoft/GitHub). Tweets, images and replies go to X. Where those vendors process data is not stated in the repo. <span class="tag i">inferred</span></li>
+  <li><strong>Platform policy risk.</strong> The bulk reply feature posts AI-generated replies at randomized times. X's automation rules restrict automated replies; this can put user accounts or the X app at risk. Question for the owner. <span class="tag i">inferred</span></li>
+  <li><strong>Lock-in.</strong> X is not replaceable (the product is X-specific). The LLM vendor is easy to swap. The Redis store is already swappable.</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="failure">
+<h2>7. Failure and scaling</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Dependency</th><th>When slow or down</th><th>Spreads to</th><th>Protection present</th><th>Missing</th></tr></thead>
+<tbody>
+<tr class="searchable"><td>KeyDB</td><td>OAuth start and callback fail; <code>/auth/refresh</code> fails so users are logged out in ≤15 min; <code>queue.add</code> throws</td><td>Chat: turn and question already written, so an <strong>empty turn</strong> stays forever (<code>chat.service.ts:369–407</code>). Schedule: <code>Tweet</code> row stays <code>SCHEDULED</code> with no job.</td><td>node-redis auto-reconnect</td><td>Transaction or outbox around DB write + enqueue</td></tr>
+<tr class="searchable"><td>Postgres</td><td>All authenticated routes fail with 500</td><td>Workers fail and retry; the reply worker still works</td><td>BullMQ retries in workers</td><td>Health check endpoint, statement timeouts</td></tr>
+<tr class="searchable"><td>GitHub Models</td><td>Chat jobs take up to minutes, then fail</td><td>Up to 5 concurrent chat jobs blocked; client sees <code>message:error</code> on every attempt, then may later get a success</td><td>AI SDK <code>maxRetries: 3</code>, BullMQ 3 attempts, RAG skip on error</td><td>Timeout, single error event after the last attempt, circuit breaker</td></tr>
+<tr class="searchable"><td>X API</td><td>Publish returns 500 (all errors from <code>getUserAccessToken</code> are rewrapped as plain <code>Error</code>)</td><td>Schedule worker retries, then <code>FAILED</code>. Reply jobs: lost silently</td><td>Retries on schedule</td><td>Idempotency on retries, correct status codes (401 vs 500), retries for reply jobs</td></tr>
+<tr class="searchable"><td>Process crash</td><td>HTTP, sockets and all workers stop together</td><td>Jobs resume after restart (state in KeyDB)</td><td>Graceful shutdown on SIGTERM / SIGINT</td><td>Process manager config is not in the repo</td></tr>
+</tbody></table></div>
+
+<h3>Failure propagation: KeyDB outage</h3>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  kdb[("KeyDB down")]:::bad
+  oauth["/auth/authorize and callback"]:::hit
+  refresh["/auth/refresh"]:::hit
+  users["Users logged out within 15 min"]:::hit
+  chatadd["chat queue.add throws"]:::hit
+  empty["Empty turn left in Postgres"]:::hit
+  sched["schedule queue.add throws"]:::hit
+  orphan["Tweet row SCHEDULED with no job"]:::hit
+  kdb --> oauth
+  kdb --> refresh --> users
+  kdb --> chatadd --> empty
+  kdb --> sched --> orphan
+  classDef bad fill:#b3261e,color:#ffffff,stroke:#b3261e
+  classDef hit fill:#f0b45a,color:#1d1c1a,stroke:#a15c00
+</pre></div>
+<p class="caption">Notice that KeyDB is a single point of failure for authentication, not only for background work.</p>
+
+<h3>Bottlenecks, in the order they will hit</h3>
+<ol class="steps">
+  <li><strong>LLM rate limits.</strong> Each chat turn = 1 chat call + 2 (SINGLE) or 4 (MULTIPLE) embedding calls + 1 more for retrieval. Fix: batch embeddings with <code>embedMany</code>, or skip storing assistant options. <span class="tag i">inferred</span></li>
+  <li><strong>Memory query.</strong> No vector index and probably no index on <code>Memory.conversation_id</code>, so retrieval scans rows. Fine now; add an index when memory grows. <span class="tag i">inferred</span> (no index in migrations or schema)</li>
+  <li><strong>Conversation list.</strong> <code>getConversations</code> loads all of a user's conversations, then slices in memory (<code>conversation.service.ts:28</code>). <span class="tag v">verified</span></li>
+  <li><strong>Single instance.</strong> A second instance needs the Socket.io Redis adapter; otherwise workers emit to the wrong process.</li>
+  <li><strong>X API caps.</strong> Post and read limits per tier will cap bulk replies before compute does. <span class="tag i">inferred</span></li>
+</ol>
+</section>
+
+<!-- ============================================================ -->
+<section id="tradeoffs">
+<h2>8. Trade-offs</h2>
+<div class="grid">
+<div class="card searchable"><h4>Async chat (queue + Socket.io) instead of a streamed HTTP response</h4>
+<p><strong>Gain:</strong> the request returns fast, jobs survive restarts and retry.</p>
+<p><strong>Cost:</strong> two channels to keep in sync, a join-before-emit race, no token streaming, and the worker is tied to the HTTP process.</p>
+<p><strong>Evidence:</strong> commit <code>631f171</code> added Socket.io; chat queue design in <code>chat.queue.ts</code>. Reasoning is <span class="tag i">inferred</span>.</p></div>
+
+<div class="card searchable"><h4>One process for API and workers</h4>
+<p><strong>Gain:</strong> one deploy, one config, simple local dev.</p>
+<p><strong>Cost:</strong> a slow LLM job and HTTP traffic share one event loop; you cannot scale them separately.</p>
+<p><strong>Evidence:</strong> <code>src/server.ts</code> starts all workers. <span class="tag v">verified</span></p></div>
+
+<div class="card searchable"><h4>pgvector in Postgres instead of a vector database</h4>
+<p><strong>Gain:</strong> one store, joins with chat data, no extra vendor.</p>
+<p><strong>Cost:</strong> vector type is a custom Drizzle type; queries use raw SQL; no ANN index yet.</p>
+<p><strong>Evidence:</strong> <code>schema.ts</code> custom <code>vector(1536)</code>; commit <code>552b403</code>. <span class="tag v">verified</span></p></div>
+
+<div class="card searchable"><h4>Prisma → Drizzle, with hand-written SQL migrations</h4>
+<p><strong>Gain:</strong> lighter runtime, full control over destructive steps (migration 0000 deletes legacy rows on purpose).</p>
+<p><strong>Cost:</strong> the drizzle-kit journal (<code>0000_add-profile-imgs</code>) does not match the SQL files, and the base tables come from an old Prisma <code>0_init</code> migration that is no longer in the tree, so a fresh database cannot be built from this repo alone.</p>
+<p><strong>Evidence:</strong> commits <code>cffa306</code> (2026-06-27) to <code>19c3ae8</code> (2026-09-10). <span class="tag v">verified</span></p></div>
+
+<div class="card searchable"><h4>Raw fetch → official X SDK (xdk)</h4>
+<p><strong>Gain:</strong> less code (auth service lost 96 lines), PKCE and refresh handled by the SDK.</p>
+<p><strong>Cost:</strong> dependency on a 0.x SDK; some fields are read through <code>as any</code> (<code>confirmed_email</code>, <code>mediaType</code>).</p>
+<p><strong>Evidence:</strong> <code>PR.md</code>, commits 2026-07-22. <span class="tag v">verified</span></p></div>
+
+<div class="card searchable"><h4>Stateless JWT + server-side refresh tokens</h4>
+<p><strong>Gain:</strong> no DB call per request; refresh tokens can be revoked per user.</p>
+<p><strong>Cost:</strong> profile data in the JWT can be 15 minutes stale; revocation only works if logout works (it does not today, see Risks).</p>
+<p><strong>Evidence:</strong> commit <code>917fa68</code> removed email/password auth. <span class="tag v">verified</span></p></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="run">
+<h2>9. Run and deploy</h2>
+<ul class="tight-list">
+  <li><strong>Local.</strong> <code>pnpm keydb:up</code> (KeyDB in Docker with AOF), <code>pnpm db:migrate</code> (applies <code>drizzle/migrations/*.sql</code>), <code>pnpm dev</code> (tsx watch). <span class="tag v">verified</span></li>
+  <li><strong>Build.</strong> <code>pnpm build</code> → <code>dist/</code>, <code>pnpm start</code> runs <code>dist/server.js</code>. <span class="tag v">verified</span></li>
+  <li><strong>Tests.</strong> <code>pnpm test</code> runs Node's built-in test runner through tsx (<code>src/**/*.test.ts</code>), not Vitest. 4 test files: chat turns, post service, post validation, schedule validation. <span class="tag v">verified</span></li>
+  <li><strong>Deploy.</strong> No Dockerfile for the app, no CI workflow, no IaC in the repo. Production hosting is unknown. Comments in <code>.env.example</code> mention Aiven for the Redis store. <span class="tag i">inferred</span></li>
+  <li><strong>Deploy order.</strong> Run SQL migrations before starting new code (the schema file assumes migrations 0000–0002 have run).</li>
+</ul>
+<details><summary>Environment variables (names only)</summary><ul>
+  <li>Core: <code>PORT</code>, <code>APP_URL</code>, <code>CLIENT_URL</code>, <code>NODE_ENV</code>, <code>LOG_LEVEL</code></li>
+  <li>Auth: <code>ACCESS_TOKEN_SECRET</code> (required at import), <code>SESSION_SECRET</code></li>
+  <li>X: <code>X_CLIENT_ID</code>, <code>X_CLIENT_SECRET</code>, <code>X_BEARER_TOKEN</code>; unused: <code>X_ACCESS_TOKEN</code>, <code>X_ACCESS_TOKEN_SECRET</code>, <code>X_API_KEY</code>, <code>X_API_KEY_SECRET</code></li>
+  <li>AI: <code>BASE_URL</code>, <code>GITHUB_TOKEN</code></li>
+  <li>Stores: <code>DATABASE_URL</code>, <code>DIRECT_URL</code> (unused), <code>KEYDB_URL</code> / <code>REDIS_URL</code></li>
+  <li>S3 (unused path): <code>AWS_REGION</code>, <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, <code>AWS_S3_BUCKET</code></li>
+</ul></details>
+</section>
+
+<!-- ============================================================ -->
+<section id="data">
+<h2>10. Data</h2>
+<div class="diagram"><pre class="mermaid">
+erDiagram
+  User ||--o| XAccount : "has one"
+  User ||--o{ Tweet : "schedules"
+  Conversation ||--o{ MessageGroup : "turns"
+  Conversation ||--o{ Message : "contains"
+  Conversation ||--o{ Memory : "remembers"
+  MessageGroup ||--o{ Message : "question and options"
+  Message ||--o{ MessageGroup : "refined by"
+</pre></div>
+<p class="caption">Notice that <code>Conversation.user_id</code> has no foreign key to <code>User</code>, and the refinement tree runs Message → MessageGroup → Message.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Entity / key</th><th>Store</th><th>Owner module</th><th>Notes</th></tr></thead>
+<tbody>
+<tr class="searchable"><td><code>User</code></td><td>Postgres</td><td>user, auth</td><td><code>id</code> = X user id. <code>email</code> is unique and NOT NULL. <code>password_hash</code> is a leftover.</td></tr>
+<tr class="searchable"><td><code>XAccount</code></td><td>Postgres</td><td>x-account</td><td>1:1 with User. Access and refresh tokens in plaintext. <code>token_expires_at</code> assumes 2 h.</td></tr>
+<tr class="searchable"><td><code>Tweet</code></td><td>Postgres</td><td>post</td><td>Status <code>DRAFT | SENT | SCHEDULED | CANCELLED | FAILED</code>. <code>img</code> column unused.</td></tr>
+<tr class="searchable"><td><code>Conversation</code>, <code>MessageGroup</code>, <code>Message</code></td><td>Postgres</td><td>chat, conversation</td><td>Turn model from migration 0000. Indexes from 0001 match the read paths.</td></tr>
+<tr class="searchable"><td><code>Memory</code></td><td>Postgres (pgvector)</td><td>AIService</td><td>1536-dim embedding. FK to Conversation has no <code>ON DELETE CASCADE</code>. <code>deleted_at</code> defaults to <code>now()</code> on every row.</td></tr>
+<tr class="searchable"><td><code>oauth:&lt;state&gt;</code></td><td>KeyDB</td><td>auth</td><td>PKCE verifier, 600 s TTL</td></tr>
+<tr class="searchable"><td><code>rtKey:&lt;sha256&gt;</code>, <code>rtUser:&lt;userId&gt;</code></td><td>KeyDB</td><td>auth (<code>lib/keydb.ts</code>)</td><td>Refresh token hash → user id, 7 days; set of hashes per user</td></tr>
+<tr class="searchable"><td><code>session:&lt;sessionID&gt;</code></td><td>KeyDB</td><td>auth, read by tweet-reply</td><td>X token pair as JSON, <strong>no TTL</strong></td></tr>
+<tr class="searchable"><td><code>sess:&lt;id&gt;</code></td><td>KeyDB</td><td>express-session (connect-redis default prefix)</td><td>Never written, because nothing sets <code>req.session</code> and <code>saveUninitialized</code> is false <span class="tag i">inferred</span></td></tr>
+<tr class="searchable"><td><code>bull:chat-response:*</code>, <code>bull:schedule-post:*</code>, <code>bull:tweet-reply:*</code></td><td>KeyDB</td><td>BullMQ</td><td>Completed jobs removed; failed jobs kept</td></tr>
+</tbody></table></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="conventions">
+<h2>11. Conventions</h2>
+<ul class="tight-list">
+  <li>Feature folders: <code>&lt;feature&gt;.route / controller / service / validation / queue / types .ts</code>. Services have no Express types (except <code>post.service</code>, which takes <code>Express.Multer.File</code>).</li>
+  <li>ESM with <code>.js</code> import suffixes; relative imports only; strict TypeScript with unused-variable checks.</li>
+  <li>Controllers use <code>try/catch</code> + <code>next(error)</code>; success responses go through <code>sendResponse(res, status, message, data, pagination?)</code>; errors use classes in <code>src/shared/lib/errors.ts</code>. Exceptions: <code>auth.controller</code> and <code>tweet-reply.controller</code> have no try/catch (Express 5 forwards async errors, so this still works).</li>
+  <li>Joi for validation; <code>stripUnknown: true</code>. Two feature files define their own <code>validateBody</code>.</li>
+  <li>DB columns are snake_case (one exception: <code>Tweet.dateScheduled</code>). Table names are PascalCase.</li>
+  <li>Logging: <code>AGENTS.md</code> says pino, but most code uses <code>console.*</code>.</li>
+  <li><strong>Docs drift:</strong> <code>AGENTS.md</code> still describes Prisma and Vitest; <code>API.md</code> still mentions refinement by <code>parent_id</code>, which migration 0000 removed. <span class="tag v">verified</span></li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="history">
+<h2>12. History</h2>
+<div class="timeline">
+  <div><b>2025-10</b> — "barebones" first commit.</div>
+  <div><b>2025-11-20</b> — Express server, AI and X services for tweet replies, pino logging.</div>
+  <div><b>2025-12-01</b> — X OAuth 2.0 flow, express-session.</div>
+  <div><b>2026-02-17/18</b> — Socket.io, pgvector memory schema, conversation feature (second contributor joins).</div>
+  <div><b>2026-06-26/30</b> — Port to Drizzle, per-message persistence, refinement tree, JWT access/refresh pair.</div>
+  <div><b>2026-07-01/02</b> — Turn-based message model (migration 0000) and read indexes (0001).</div>
+  <div><b>2026-07-09/22</b> — Post endpoint with images, then full migration from raw fetch to the X SDK.</div>
+  <div><b>2026-09-10</b> — Redis → KeyDB URL, scheduled posts (0002), Prisma removed.</div>
+</div>
+
+<h3>Most-changed files (all history)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>Commits</th><th></th></tr></thead>
+<tbody id="churn"></tbody>
+</table></div>
+<p class="caption">Auth is the area that changed most: four redesigns (session → JWT, email/password removed, redirect flow, SDK). It is also where the current bugs cluster.</p>
+<p>143 commits. One author wrote about 75% of them; a second contributor built Socket.io, the turn model and the indexes. Pull requests were merged from feature branches until mid-2026; recent work goes straight to branches without merges.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="risks">
+<h2>13. Risks and open questions</h2>
+<div class="btnrow" id="risk-filter">
+  <button type="button" data-sev="all" class="on">All</button>
+  <button type="button" data-sev="high">High</button>
+  <button type="button" data-sev="med">Medium</button>
+  <button type="button" data-sev="low">Low</button>
+</div>
+<div id="risk-list"></div>
+
+<h3>Open questions</h3>
+<ul class="tight-list">
+  <li>Where does production run, and is there one instance or several? (No deploy config in repo.)</li>
+  <li>Does the production <code>Memory</code> foreign key have <code>ON DELETE RESTRICT</code> (Prisma default) or something else?</li>
+  <li>Does xdk return the user email as <code>confirmed_email</code> or <code>confirmedEmail</code>, and does it need <code>userFields: ["confirmed_email"]</code>? If email is always empty, the second new user will fail the unique constraint.</li>
+  <li>Does the bulk reply flow work in production at all, given that no session cookie is ever set? Is a client actually calling <code>/api/reply</code>?</li>
+  <li>Does the X app use rotating refresh tokens, and how often do users hit "please re-authenticate"?</li>
+  <li>Which GitHub Models tier and limits apply to <code>GITHUB_TOKEN</code>?</li>
+  <li>Is the bulk reply feature reviewed against X's automation rules?</li>
+  <li>Where is the database baseline (the Prisma <code>0_init</code> migration) for building a fresh environment?</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="glossary">
+<h2>14. Glossary</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
+<tbody>
+<tr class="searchable"><td>Turn</td><td>One <code>MessageGroup</code>: a user question plus its assistant options.</td></tr>
+<tr class="searchable"><td>Option</td><td>One assistant <code>Message</code> in a turn. <code>MULTIPLE</code> turns have 3, split on <code>---OPTION_SEPARATOR---</code>.</td></tr>
+<tr class="searchable"><td>Refinement</td><td>A child turn that rewrites one assistant option. Linked by <code>MessageGroup.parent_message_id</code>.</td></tr>
+<tr class="searchable"><td>Thread</td><td>The chain of refinements under one option, loaded by a recursive SQL query.</td></tr>
+<tr class="searchable"><td>Memory</td><td>A stored message with its embedding, used for RAG inside one conversation.</td></tr>
+<tr class="searchable"><td>RAG</td><td>Retrieval-augmented generation: add the most similar past messages to the system prompt.</td></tr>
+<tr class="searchable"><td>Access token</td><td>The 15-minute JWT the client sends as <code>Authorization: Bearer</code>.</td></tr>
+<tr class="searchable"><td>Refresh token</td><td>A random 40-byte token in an httpOnly cookie; KeyDB stores only its SHA-256 hash.</td></tr>
+<tr class="searchable"><td>X tokens</td><td>The user's OAuth tokens for the X API. Different from the app's own access/refresh tokens.</td></tr>
+<tr class="searchable"><td>KeyDB</td><td>A Redis-compatible server. The code also accepts Valkey or Redis through <code>KEYDB_URL</code>.</td></tr>
+<tr class="searchable"><td>xdk</td><td><code>@xdevplatform/xdk</code>, the official X API TypeScript SDK.</td></tr>
+<tr class="searchable"><td>GitHub Models</td><td>GitHub's hosted model API with an OpenAI-compatible interface.</td></tr>
+<tr class="searchable"><td>gLumi / gm</td><td>Web3 community greetings the reply prompt is told to mirror.</td></tr>
+</tbody></table></div>
+</section>
+</main>
+</div>
+
+<script>
+// ---------- data ----------
+const COUPLING = [
+  ["Web client", "HTTP routes", "REST JSON + Bearer JWT", "sync", "contract, runtime", "moderate", "Client cannot load or send anything", "v"],
+  ["SocketService", "Web client", "Socket.io events message:*", "async", "contract (event names, payload shape)", "moderate", "Client misses pushes; must refetch messages", "v"],
+  ["chat service", "chat worker", "BullMQ job chat-response in KeyDB", "async", "temporal (loose), contract (ChatJobData)", "loose", "Turns stay empty until the worker runs", "v"],
+  ["chat worker", "SocketService", "in-process singleton getInstance()", "sync", "code, deploy (same process)", "tight", "Worker throws; cannot run worker in another process", "v"],
+  ["chat worker", "GitHub Models", "AIService.generateChatResponse", "sync inside job", "runtime, vendor", "tight", "Every chat turn fails after retries", "v"],
+  ["chat service", "Postgres", "Drizzle + raw recursive CTE", "sync", "data, schema", "tight", "All chat routes fail", "v"],
+  ["chat worker", "Postgres", "insert Message; Memory via raw SQL", "sync", "data, schema", "tight", "Job fails and retries; possible duplicate options", "v"],
+  ["post + worker", "x-account", "getUserAccessToken()", "sync", "code, data (XAccount)", "tight", "Publish and scheduled posts fail with 500", "v"],
+  ["post + worker", "X API", "XService.createPost / uploadMedia", "sync", "runtime, vendor", "tight", "Publish fails; schedule retries then FAILED", "v"],
+  ["tweet-reply + worker", "auth", "imports xTokenRefresh; shares session:<id> key format", "sync", "code, data, semantic", "tight", "Token refresh path breaks silently if auth changes the key", "v"],
+  ["tweet-reply + worker", "KeyDB", "reads session:<sessionID>", "sync", "data", "tight", "No jobs can be queued", "v"],
+  ["auth", "x-account", "createXAccount(), getXUserDetails()", "sync", "code", "moderate", "Login fails at callback", "v"],
+  ["auth", "KeyDB", "oauth:, rtKey:, rtUser:, session: keys", "sync", "data, infrastructure", "tight", "Login and refresh fail; users logged out in 15 min", "v"],
+  ["x-account", "Postgres", "XAccount table", "sync", "data", "tight", "No X token available for any write", "v"],
+  ["x-account", "X OAuth2", "oauth2.refreshToken()", "sync", "runtime, vendor", "moderate", "Expired tokens cannot be refreshed; user must log in again", "v"],
+];
+
+const BLAST = {
+  "KeyDB": "Login, token refresh, express-session, every queue. Chat prompts leave empty turns; scheduled posts lose their jobs. Effectively a full outage after 15 minutes.",
+  "Postgres": "Every authenticated route, the chat and schedule workers, and login (user upsert). The reply worker alone keeps running.",
+  "chat worker": "Chat turns stay empty. HTTP routes still work. Clients wait forever for socket events.",
+  "SocketService": "Chat worker throws on emit, so jobs fail and retry. Answers are still saved only if the error happens after insert.",
+  "x-account": "Publish-now and the schedule worker fail. Login fails at createXAccount.",
+  "auth": "No new logins and no access token refresh; the reply worker loses its refresh path.",
+  "chat service": "No new turns; existing data still readable through conversation routes.",
+  "post + worker": "Publishing and scheduling stop; nothing else is affected.",
+  "tweet-reply + worker": "Bulk replies stop; nothing else is affected (it is a leaf).",
+  "HTTP routes": "Everything user-facing stops; queued jobs keep running.",
+  "Web client": "No users. Scheduled jobs still run.",
+  "GitHub Models": "Chat and bulk replies fail; login, publish and schedule still work.",
+  "X API": "Publish, schedule and reply fail; chat still works.",
+  "X OAuth2": "No logins; existing tokens work until they expire (about 2 h).",
+};
+
+const EXTERNAL = {
+  "X OAuth2": { users: ["auth", "x-account"], breaks: "New logins fail. Existing X tokens work for about 2 hours, then publish and schedule fail with a re-authenticate error (shown to the client as 500)." },
+  "X API": { users: ["post + worker", "tweet-reply + worker", "auth"], breaks: "Publish-now returns 500. Scheduled posts retry 3 times over ~6 s, then FAILED. Reply jobs report success:false and are not retried. Login also fails (users.getMe)." },
+  "GitHub Models": { users: ["chat worker", "tweet-reply + worker"], breaks: "Chat jobs retry (AI SDK 3× inside each of 3 BullMQ attempts) and send message:error each time. RAG retrieval is skipped on error. Memory writes fail silently. Replies are lost." },
+  "Postgres": { users: ["chat service", "chat worker", "post + worker", "x-account", "auth"], breaks: "All authenticated routes return 500. Login fails at user upsert. Workers retry." },
+  "KeyDB": { users: ["auth", "chat service", "post + worker", "tweet-reply + worker"], breaks: "Login, refresh and all queues fail. Users are logged out within 15 minutes. Chat prompts leave empty turns." },
+  "AWS S3": { users: [], breaks: "Nothing. No module imports s3.service.ts." },
+};
+
+const RISKS = [
+  ["high", "Logout never revokes the refresh token", "The cookie path is <code>/auth/refresh</code>, so the browser never sends it to <code>/auth/logout</code>. Even if it did, <code>logoutUser</code> calls <code>deleteRefreshToken(userId, tokenHash)</code> while the function expects <code>(tokenHash, userId)</code>, and the call inside is not awaited. A stolen refresh cookie stays valid for 7 days.", "auth.controller.ts:27, auth.service.ts:127, lib/keydb.ts:20", "v"],
+  ["high", "X access tokens are written to logs", "<code>console.log(\"Access token\", xAccount.access_token)</code> runs on every publish and scheduled post.", "x-account.service.ts:52", "v"],
+  ["high", "Bulk reply route has no JWT check and likely never finds a session", "<code>/api/reply</code> has no <code>authMiddleware</code>. It looks up tokens by <code>req.sessionID</code>, but no code writes to <code>req.session</code> and <code>saveUninitialized</code> is false, so the session cookie is never set and each request gets a new id. Likely result: always 500 \"No session data found\".", "tweet-reply.route.ts:7, app.ts:30, sessionData.ts:5", "i"],
+  ["high", "Deleting a used conversation probably fails", "<code>Memory.conversation_id</code> references <code>Conversation</code> without cascade (Prisma default was RESTRICT). Every chat turn writes Memory rows, so <code>DELETE /api/conversations/:id</code> hits a foreign key error. <code>API.md</code> says it cascades.", "schema.ts:160, conversation.service.ts:99", "i"],
+  ["high", "Second user with no email may fail to sign up", "<code>User.email</code> is unique and NOT NULL. The email is read through <code>(user as any).confirmed_email</code>, but <code>users.getMe</code> only requests <code>profile_image_url</code>. If the email is empty, the second new user collides on <code>\"\"</code>.", "x.service.ts:21-30, schema.ts:29", "i"],
+  ["med", "Two copies of X tokens with separate refresh paths", "XAccount (Postgres) and <code>session:&lt;id&gt;</code> (KeyDB) are refreshed independently. With rotating refresh tokens, one refresh invalidates the other copy.", "x-account.service.ts:56, auth.service.ts:90", "i"],
+  ["med", "Reply worker never retries", "The worker catches every error and returns <code>{success:false}</code>, so BullMQ marks the job complete. The log line \"will retry\" is wrong.", "tweet-reply.queue.ts:67-90", "v"],
+  ["med", "Non-idempotent retries", "Chat: a retry after partial inserts duplicates options. Schedule: the X post happens before the DB update, so a DB failure causes a second post.", "chat.queue.ts:82, post.queue.ts:62", "v"],
+  ["med", "DB write then enqueue, with no outbox", "If <code>queue.add</code> fails, the chat turn or scheduled Tweet row exists with no job.", "chat.service.ts:122-159, post.service.ts:111", "v"],
+  ["med", "Any authenticated socket can join any conversation room", "No ownership check on <code>conversation:join</code>. Conversation ids are UUIDs, so this needs a leaked id.", "socket.service.ts:44", "v"],
+  ["med", "Wrong status codes from getUserAccessToken", "All errors (404, 401 re-authenticate) are rewrapped as a plain <code>Error</code>, so the client gets 500 and cannot prompt a re-login.", "x-account.service.ts:80-83", "v"],
+  ["med", "X tokens stored in plaintext, and in job data", "XAccount stores tokens unencrypted; reply jobs copy them into KeyDB job payloads; <code>session:</code> keys never expire.", "schema.ts:42, tweet-reply.service.ts:31", "v"],
+  ["low", "No timeouts on external calls", "X and LLM calls use SDK defaults. A hung call holds a worker slot.", "x.service.ts, ai.service.ts", "v"],
+  ["low", "Conversation list loads all rows", "Pagination happens in memory after loading every conversation.", "conversation.service.ts:28", "v"],
+  ["low", "Error event on every retry", "The chat worker emits <code>message:error</code> before rethrowing, even when BullMQ will retry and may succeed.", "chat.queue.ts:127", "v"],
+  ["low", "Repo cannot build a fresh database", "Base tables came from a removed Prisma migration; the drizzle journal does not match the SQL files.", "drizzle/migrations/meta/_journal.json", "v"],
+  ["low", "Dead code and stale docs", "S3 service, <code>TWEET_PROMPTS</code>, <code>postSuccessMessage</code>, <code>withControllerLogging</code>, OAuth 1 env vars, <code>bcrypt</code>, <code>openai</code>, <code>postgres</code>, <code>nodemon</code>, <code>ts-node</code>. <code>AGENTS.md</code> describes Prisma and Vitest.", "various", "v"],
+  ["low", "No tests for auth, chat service, or workers", "Only pure helpers and the post service have tests. Auth, the most-changed area, has none.", "src/**/*.test.ts", "v"],
+];
+
+const CHURN = [
+  ["package.json", 33], ["src/features/auth/auth.service.ts", 21], ["src/features/auth/auth.controller.ts", 18],
+  ["pnpm-lock.yaml", 17], ["src/server.ts", 16], ["src/shared/services/ai.service.ts", 15],
+  ["prisma/schema.prisma (deleted)", 15], ["src/app.ts", 14], ["src/features/auth/auth.route.ts", 12],
+  ["src/features/chat/chat.service.ts", 11],
+];
+
+// ---------- helpers ----------
+const $ = (s, r = document) => r.querySelector(s);
+const tag = (k) => k === "v" ? '<span class="tag v">verified</span>' : '<span class="tag i">inferred</span>';
+
+// coupling table + buttons
+const tbody = $("#coupling-table tbody");
+tbody.innerHTML = COUPLING.map((r) =>
+  `<tr class="searchable" data-from="${r[0]}" data-to="${r[1]}"><td>${r[0]}</td><td>${r[1]}</td><td>${r[2].replace(/</g, "&lt;")}</td><td>${r[3]}</td><td>${r[4]}</td><td><span class="tag ${r[5]}">${r[5]}</span> ${tag(r[7])}</td><td>${r[6]}</td></tr>`
+).join("");
+const nodes = [...new Set(COUPLING.flatMap((r) => [r[0], r[1]]))];
+const cb = $("#coupling-buttons");
+nodes.forEach((n) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = n;
+  b.onclick = () => {
+    const was = b.classList.contains("on");
+    cb.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+    const rows = tbody.querySelectorAll("tr");
+    if (was) {
+      rows.forEach((tr) => tr.classList.remove("dim", "lit"));
+      $("#coupling-panel").textContent = "Select a component.";
+      return;
+    }
+    b.classList.add("on");
+    let inN = 0, outN = 0;
+    rows.forEach((tr) => {
+      const hit = tr.dataset.from === n || tr.dataset.to === n;
+      if (tr.dataset.to === n) inN++;
+      if (tr.dataset.from === n) outN++;
+      tr.classList.toggle("dim", !hit); tr.classList.toggle("lit", hit);
+    });
+    $("#coupling-panel").innerHTML =
+      `<strong>${n}</strong> — ${inN} incoming, ${outN} outgoing links.<br><strong>Blast radius if it fails:</strong> ${BLAST[n] || "Only its direct callers, listed in the highlighted rows."}`;
+  };
+  cb.appendChild(b);
+});
+
+// external buttons
+const eb = $("#ext-buttons");
+Object.entries(EXTERNAL).forEach(([name, info]) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = name;
+  b.onclick = () => {
+    eb.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+    b.classList.add("on");
+    $("#ext-panel").innerHTML = `<strong>${name}</strong><br><strong>Used by:</strong> ${info.users.length ? info.users.join(", ") : "nothing"}<br><strong>If it fails:</strong> ${info.breaks}`;
+  };
+  eb.appendChild(b);
+});
+
+// risks
+const rl = $("#risk-list");
+const sevLabel = { high: "High", med: "Medium", low: "Low" };
+rl.innerHTML = RISKS.map((r) =>
+  `<div class="card searchable sev-${r[0]}" data-sev="${r[0]}"><h4>${r[1]} <span class="tag ${r[0] === "high" ? "tight" : r[0] === "med" ? "moderate" : "loose"}">${sevLabel[r[0]]}</span> ${tag(r[4])}</h4><p>${r[2]}</p><p class="mono" style="color:var(--muted)">${r[3]}</p></div>`
+).join("");
+$("#risk-filter").addEventListener("click", (e) => {
+  const sev = e.target.dataset?.sev; if (!sev) return;
+  $("#risk-filter").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === e.target));
+  rl.querySelectorAll(".card").forEach((c) => { c.style.display = sev === "all" || c.dataset.sev === sev ? "" : "none"; });
+});
+
+// churn
+const max = CHURN[0][1];
+$("#churn").innerHTML = CHURN.map(([f, n]) =>
+  `<tr><td><code>${f}</code></td><td>${n}</td><td style="width:40%"><span class="bar" style="width:${Math.round(n / max * 100)}%"></span></td></tr>`
+).join("");
+
+// search
+$("#search").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll(".searchable").forEach((el) => {
+    el.classList.toggle("hidden-by-search", q.length > 1 && !el.textContent.toLowerCase().includes(q));
+  });
+});
+
+// diagram node click → flash card
+window.addEventListener("hashchange", () => {
+  const el = document.getElementById(location.hash.slice(1));
+  if (el && el.classList.contains("card")) { el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600); }
+});
+
+// theme
+function currentDark() {
+  const t = document.documentElement.dataset.theme;
+  if (t) return t === "dark";
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+}
+try { const saved = localStorage.getItem("xbot-theme"); if (saved) document.documentElement.dataset.theme = saved; } catch (_) {}
+const sources = [...document.querySelectorAll("pre.mermaid")].map((p) => p.textContent);
+async function renderDiagrams() {
+  if (!window.mermaid) return;
+  const pres = document.querySelectorAll("pre.mermaid");
+  pres.forEach((p, i) => { p.removeAttribute("data-processed"); p.textContent = sources[i]; });
+  mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: currentDark() ? "dark" : "default", flowchart: { htmlLabels: true } });
+  try { await mermaid.run({ nodes: pres }); } catch (err) { console.error(err); }
+}
+$("#theme").onclick = () => {
+  const next = currentDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("xbot-theme", next); } catch (_) {}
+  renderDiagrams();
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js" onload="renderDiagrams()" onerror="document.querySelectorAll('pre.mermaid').forEach(p=>p.style.textAlign='left')"></script>
+</body>
+</html>
