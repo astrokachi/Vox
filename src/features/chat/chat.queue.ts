@@ -122,13 +122,21 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error(`Chat job ${job.id} failed: ${errorMessage}`);
+      const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      console.error(
+        `Chat job ${job.id} failed (attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1}): ${errorMessage}`,
+      );
 
-      socketService.emitToConversation(conversationId, "message:error", {
-        conversationId,
-        messageGroupId,
-        error: "Failed to generate AI response. Please try again.",
-      });
+      // Only report the failure once retries are exhausted; otherwise the
+      // client would flip between "error" and "typing" on every retry.
+      if (isFinalAttempt) {
+        socketService.emitToConversation(conversationId, "message:error", {
+          conversationId,
+          messageGroupId,
+          parentMessageId: parentMessageId ?? null,
+          error: "Failed to generate AI response. Please try again.",
+        });
+      }
 
       throw error;
     }
