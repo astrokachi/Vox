@@ -10,6 +10,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/run-migration.ts",
+    "memories:reembed": "tsx scripts/reembed-memories.ts",
     "keydb:up": "docker compose up -d keydb",
     "keydb:down": "docker compose down",
     "keydb:logs": "docker compose logs -f keydb"

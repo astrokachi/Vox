@@ -7,6 +7,12 @@ import { sql } from "drizzle-orm";
 import { memories } from "../db/schema.js";
 import { CHAT_SYSTEM_PROMPT } from "../prompt-templates.js";
 
+const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+const CHAT_MODEL = process.env.AI_CHAT_MODEL || "gemini-flash-latest";
+const EMBEDDING_MODEL = process.env.AI_EMBEDDING_MODEL || "gemini-embedding-001";
+// Must match the existing pgvector data in the Memory table
+const EMBEDDING_DIMENSIONS = 1536;
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -23,29 +29,24 @@ export class AIService {
   }
 
   private getProvider() {
-    const apiKey = process.env.GITHUB_TOKEN;
-    const baseURL = process.env.BASE_URL!;
+    const apiKey = process.env.GEMINI_API_KEY;
+    const baseURL = process.env.BASE_URL || GEMINI_BASE_URL;
 
     if (!apiKey) {
-      throw new Error("GITHUB_TOKEN environment variable is not set");
+      throw new Error("GEMINI_API_KEY environment variable is not set");
     }
 
     const provider = createOpenAICompatible({
-      name: "github-models",
+      name: "gemini",
       baseURL,
       apiKey,
-      headers: {
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
     });
     return provider;
   }
 
   private getEmbeddingModel() {
     const openai = this.getProvider();
-    const embeddingModel = openai.textEmbeddingModel(
-      "openai/text-embedding-3-small",
-    );
+    const embeddingModel = openai.textEmbeddingModel(EMBEDDING_MODEL);
     return embeddingModel;
   }
 
@@ -61,7 +62,7 @@ export class AIService {
 
     try {
       const response = await generateText({
-        model: openai("gpt-4.1"),
+        model: openai(CHAT_MODEL),
         maxRetries: 3,
         system: systemText,
         messages: [
@@ -129,7 +130,7 @@ export class AIService {
 
     try {
       const response = await generateText({
-        model: openai("gpt-4.1"),
+        model: openai(CHAT_MODEL),
         maxRetries: 3,
         system: systemText,
         messages: messagesForLLM,
@@ -147,6 +148,9 @@ export class AIService {
     const { embedding } = await embed({
       model: embeddingModel,
       value: text,
+      providerOptions: {
+        openaiCompatible: { dimensions: EMBEDDING_DIMENSIONS },
+      },
     });
 
     return embedding;
@@ -190,22 +194,36 @@ export class AIService {
 
   private handleProviderError(err: any): never {
     const message =
-      err?.data?.error?.message || err?.message || "AI request failed";
+      err?.data?.error?.message ||
+      err?.message ||
+      this.parseErrorBody(err?.responseBody) ||
+      "AI request failed";
     const status = err?.statusCode || 500;
 
-    if (
-      status === 401 &&
-      typeof message === "string" &&
-      message.toLowerCase().includes("models permission")
-    ) {
-      const e: any = new Error(
-        "GitHub Models token missing models:read permission",
-      );
-      e.statusCode = 401;
-      e.code = "GITHUB_MODELS_MISSING_PERMISSION";
+    // The SDK leaves the message empty when it can't parse the provider's error body
+    if (err instanceof Error && !err.message) {
+      err.message = `AI provider error (${status}): ${message}`;
+    }
+
+    if (status === 429) {
+      const e: any = new Error(`AI provider rate limit hit: ${message}`);
+      e.statusCode = 429;
+      e.code = "AI_RATE_LIMITED";
       throw e;
     }
 
     throw err;
+  }
+
+  // Gemini wraps errors in an array: [{ "error": { "message": ... } }]
+  private parseErrorBody(body?: string): string | undefined {
+    if (!body) return undefined;
+    try {
+      const parsed = JSON.parse(body);
+      const entry = Array.isArray(parsed) ? parsed[0] : parsed;
+      return entry?.error?.message;
+    } catch {
+      return undefined;
+    }
   }
 }
