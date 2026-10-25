@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS "Tweet" (
   "updated_at" timestamp DEFAULT now() NOT NULL
 );
 
+-- An older Tweet table may already exist without an owner column.
+ALTER TABLE "Tweet" ADD COLUMN IF NOT EXISTS "user_id" text NOT NULL;
+
 DO $$ BEGIN
   ALTER TABLE "Tweet"
     ADD CONSTRAINT "Tweet_user_id_User_id_fk"
