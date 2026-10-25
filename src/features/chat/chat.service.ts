@@ -8,6 +8,7 @@ import {
 import { NotFoundError } from "../../shared/lib/errors.js";
 import { chatQueue } from "./chat.queue.js";
 import { DRAFTS_PER_PROMPT, refundDrafts, reserveDrafts } from "./chat.usage.js";
+import type { ChatJobData } from "./chat.types.js";
 import {
   type ChatType,
   type GroupRow,
@@ -81,50 +82,77 @@ async function withReservedDrafts<T>(
   }
 }
 
+/**
+ * Queue the job for a turn whose rows were just committed. If queueing fails,
+ * `undo` deletes those rows (deletes cascade to the turn's messages), so the
+ * failed request leaves nothing behind. Queueing happens after the commit so
+ * the worker never sees a job whose rows don't exist yet.
+ */
+async function queueOrUndo(name: string, job: ChatJobData, undo: () => Promise<unknown>) {
+  try {
+    await chatQueue.add(name, job);
+  } catch (error) {
+    // A failed cleanup is logged, never thrown: the caller needs the original error.
+    await undo().catch((undoError) =>
+      console.error(`Failed to remove turn ${job.messageGroupId} after queueing failed:`, undoError),
+    );
+    throw error;
+  }
+}
+
 export async function createConversationWithMessage(
   userId: string,
   content: string,
   type: ChatType = "SINGLE",
 ) {
   return withReservedDrafts(userId, draftsFor(type), async (draftCount) => {
-    const [conversation] = await db
-      .insert(conversations)
-      .values({ user_id: userId, title: deriveTitle(content) })
-      .returning();
+    const { conversation, group, question } = await db.transaction(async (tx) => {
+      const [conversation] = await tx
+        .insert(conversations)
+        .values({ user_id: userId, title: deriveTitle(content) })
+        .returning();
 
-    const [group] = await db
-      .insert(messageGroups)
-      .values({
-        conversation_id: conversation.id,
-        parent_message_id: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      })
-      .returning();
+      const [group] = await tx
+        .insert(messageGroups)
+        .values({
+          conversation_id: conversation.id,
+          parent_message_id: null,
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .returning();
 
-    const [question] = await db
-      .insert(messages)
-      .values({
-        conversation_id: conversation.id,
-        message_group_id: group.id,
-        role: "user",
-        content,
-        type,
-        created_at: new Date(),
-      })
-      .returning();
+      const [question] = await tx
+        .insert(messages)
+        .values({
+          conversation_id: conversation.id,
+          message_group_id: group.id,
+          role: "user",
+          content,
+          type,
+          created_at: new Date(),
+        })
+        .returning();
+
+      return { conversation, group, question };
+    });
 
     // The worker fills this turn's response options into the SAME group.
-    await chatQueue.add(`chat:${conversation.id}`, {
-      operation: "addMessage",
-      conversationId: conversation.id,
-      messageGroupId: group.id,
-      recentMessages: [{ role: "user", content }],
-      currentUserMessage: content,
-      type,
-      userId,
-      draftCount,
-    });
+    // The conversation exists only for this turn, so undoing removes all of it.
+    await queueOrUndo(
+      `chat:${conversation.id}`,
+      {
+        operation: "addMessage",
+        conversationId: conversation.id,
+        messageGroupId: group.id,
+        recentMessages: [{ role: "user", content }],
+        currentUserMessage: content,
+        type,
+        userId,
+        draftCount,
+      },
+      () => db.delete(conversations).where(eq(conversations.id, conversation.id)),
+    );
 
     return {
       data: {
@@ -146,47 +174,54 @@ export async function addMessageToConversation(
 
   return withReservedDrafts(userId, draftsFor(type), async (draftCount) => {
     // Each new prompt is a fresh top-level turn.
-    const [group] = await db
-      .insert(messageGroups)
-      .values({
-        conversation_id: conversationId,
-        parent_message_id: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      })
-      .returning();
+    const { group, question, recentMessages } = await db.transaction(async (tx) => {
+      const [group] = await tx
+        .insert(messageGroups)
+        .values({
+          conversation_id: conversationId,
+          parent_message_id: null,
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .returning();
 
-    const [question] = await db
-      .insert(messages)
-      .values({
-        conversation_id: conversationId,
-        message_group_id: group.id,
-        role: "user",
-        content,
-        type,
-        created_at: new Date(),
-      })
-      .returning();
+      const [question] = await tx
+        .insert(messages)
+        .values({
+          conversation_id: conversationId,
+          message_group_id: group.id,
+          role: "user",
+          content,
+          type,
+          created_at: new Date(),
+        })
+        .returning();
 
-    // Short-term context: last 10 messages across the conversation.
-    const recent = await db
-      .select({ role: messages.role, content: messages.content })
-      .from(messages)
-      .where(eq(messages.conversation_id, conversationId))
-      .orderBy(desc(messages.created_at))
-      .limit(10);
-    const recentMessages = recent.reverse();
+      // Short-term context: last 10 messages across the conversation.
+      const recent = await tx
+        .select({ role: messages.role, content: messages.content })
+        .from(messages)
+        .where(eq(messages.conversation_id, conversationId))
+        .orderBy(desc(messages.created_at))
+        .limit(10);
 
-    await chatQueue.add(`chat:${conversationId}`, {
-      operation: "addMessage",
-      conversationId,
-      messageGroupId: group.id,
-      recentMessages,
-      currentUserMessage: content,
-      type,
-      userId,
-      draftCount,
+      return { group, question, recentMessages: recent.reverse() };
     });
+
+    await queueOrUndo(
+      `chat:${conversationId}`,
+      {
+        operation: "addMessage",
+        conversationId,
+        messageGroupId: group.id,
+        recentMessages,
+        currentUserMessage: content,
+        type,
+        userId,
+        draftCount,
+      },
+      () => db.delete(messageGroups).where(eq(messageGroups.id, group.id)),
+    );
 
     return { data: toTurn(group, [question]) };
   });
@@ -255,39 +290,47 @@ export async function refineMessage(
 
   return withReservedDrafts(userId, 1, async (draftCount) => {
     // A refinement is a child turn tied to the parent response.
-    const [group] = await db
-      .insert(messageGroups)
-      .values({
-        conversation_id: parent.conversation_id,
-        parent_message_id: parent.id,
-        created_at: new Date(),
-        updated_at: new Date(),
-      })
-      .returning();
+    const { group, question } = await db.transaction(async (tx) => {
+      const [group] = await tx
+        .insert(messageGroups)
+        .values({
+          conversation_id: parent.conversation_id,
+          parent_message_id: parent.id,
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .returning();
 
-    const [question] = await db
-      .insert(messages)
-      .values({
-        conversation_id: parent.conversation_id,
-        message_group_id: group.id,
-        role: "user",
-        content: instruction,
-        type: "SINGLE",
-        created_at: new Date(),
-      })
-      .returning();
+      const [question] = await tx
+        .insert(messages)
+        .values({
+          conversation_id: parent.conversation_id,
+          message_group_id: group.id,
+          role: "user",
+          content: instruction,
+          type: "SINGLE",
+          created_at: new Date(),
+        })
+        .returning();
 
-    await chatQueue.add(`refine:${group.id}`, {
-      operation: "refine",
-      conversationId: parent.conversation_id,
-      messageGroupId: group.id,
-      parentMessageId: parent.id,
-      recentMessages: [{ role: "assistant", content: parent.content }],
-      currentUserMessage: buildRefinePrompt(parent.content, instruction),
-      type: "SINGLE",
-      userId,
-      draftCount,
+      return { group, question };
     });
+
+    await queueOrUndo(
+      `refine:${group.id}`,
+      {
+        operation: "refine",
+        conversationId: parent.conversation_id,
+        messageGroupId: group.id,
+        parentMessageId: parent.id,
+        recentMessages: [{ role: "assistant", content: parent.content }],
+        currentUserMessage: buildRefinePrompt(parent.content, instruction),
+        type: "SINGLE",
+        userId,
+        draftCount,
+      },
+      () => db.delete(messageGroups).where(eq(messageGroups.id, group.id)),
+    );
 
     return { data: toTurn(group, [question]) };
   });
