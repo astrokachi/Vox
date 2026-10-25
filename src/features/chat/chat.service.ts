@@ -7,6 +7,7 @@ import {
 } from "../../shared/db/schema.js";
 import { NotFoundError } from "../../shared/lib/errors.js";
 import { chatQueue } from "./chat.queue.js";
+import { DRAFTS_PER_PROMPT, refundDrafts, reserveDrafts } from "./chat.usage.js";
 import {
   type ChatType,
   type GroupRow,
@@ -18,6 +19,7 @@ import {
 } from "./chat.turns.js";
 
 export { toTurn, buildRefinePrompt, deriveTitle } from "./chat.turns.js";
+export { getDraftUsage } from "./chat.usage.js";
 export type { Turn } from "./chat.turns.js";
 
 /** Load the messages for a set of groups and build turns in group order. */
@@ -58,55 +60,80 @@ async function requireConversation(conversationId: string, userId: string) {
   return conversation;
 }
 
+/** How many drafts a prompt of this type asks for. */
+const draftsFor = (type: ChatType) => (type === "MULTIPLE" ? DRAFTS_PER_PROMPT : 1);
+
+/** Run `work` against a draft reservation; refund it if work fails before queueing. */
+async function withReservedDrafts<T>(
+  userId: string,
+  wanted: number,
+  work: (draftCount: number) => Promise<T>,
+): Promise<T> {
+  const draftCount = await reserveDrafts(userId, wanted);
+  try {
+    return await work(draftCount);
+  } catch (error) {
+    // A failed refund is logged, never thrown: the caller needs the original error.
+    await refundDrafts(userId, draftCount).catch((refundError) =>
+      console.error(`Failed to refund ${draftCount} drafts for user ${userId}:`, refundError),
+    );
+    throw error;
+  }
+}
+
 export async function createConversationWithMessage(
   userId: string,
   content: string,
   type: ChatType = "SINGLE",
 ) {
-  const [conversation] = await db
-    .insert(conversations)
-    .values({ user_id: userId, title: deriveTitle(content) })
-    .returning();
+  return withReservedDrafts(userId, draftsFor(type), async (draftCount) => {
+    const [conversation] = await db
+      .insert(conversations)
+      .values({ user_id: userId, title: deriveTitle(content) })
+      .returning();
 
-  const [group] = await db
-    .insert(messageGroups)
-    .values({
-      conversation_id: conversation.id,
-      parent_message_id: null,
-      created_at: new Date(),
-      updated_at: new Date(),
-    })
-    .returning();
+    const [group] = await db
+      .insert(messageGroups)
+      .values({
+        conversation_id: conversation.id,
+        parent_message_id: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .returning();
 
-  const [question] = await db
-    .insert(messages)
-    .values({
-      conversation_id: conversation.id,
-      message_group_id: group.id,
-      role: "user",
-      content,
+    const [question] = await db
+      .insert(messages)
+      .values({
+        conversation_id: conversation.id,
+        message_group_id: group.id,
+        role: "user",
+        content,
+        type,
+        created_at: new Date(),
+      })
+      .returning();
+
+    // The worker fills this turn's response options into the SAME group.
+    await chatQueue.add(`chat:${conversation.id}`, {
+      operation: "addMessage",
+      conversationId: conversation.id,
+      messageGroupId: group.id,
+      recentMessages: [{ role: "user", content }],
+      currentUserMessage: content,
       type,
-      created_at: new Date(),
-    })
-    .returning();
+      userId,
+      draftCount,
+    });
 
-  // The worker fills this turn's response options into the SAME group.
-  await chatQueue.add(`chat:${conversation.id}`, {
-    operation: "addMessage",
-    conversationId: conversation.id,
-    messageGroupId: group.id,
-    recentMessages: [{ role: "user", content }],
-    currentUserMessage: content,
-    type,
+    return {
+      data: {
+        id: conversation.id,
+        title: conversation.title,
+        turn: toTurn(group, [question]),
+      },
+    };
   });
-
-  return {
-    data: {
-      id: conversation.id,
-      title: conversation.title,
-      turn: toTurn(group, [question]),
-    },
-  };
 }
 
 export async function addMessageToConversation(
@@ -117,48 +144,52 @@ export async function addMessageToConversation(
 ) {
   await requireConversation(conversationId, userId);
 
-  // Each new prompt is a fresh top-level turn.
-  const [group] = await db
-    .insert(messageGroups)
-    .values({
-      conversation_id: conversationId,
-      parent_message_id: null,
-      created_at: new Date(),
-      updated_at: new Date(),
-    })
-    .returning();
+  return withReservedDrafts(userId, draftsFor(type), async (draftCount) => {
+    // Each new prompt is a fresh top-level turn.
+    const [group] = await db
+      .insert(messageGroups)
+      .values({
+        conversation_id: conversationId,
+        parent_message_id: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .returning();
 
-  const [question] = await db
-    .insert(messages)
-    .values({
-      conversation_id: conversationId,
-      message_group_id: group.id,
-      role: "user",
-      content,
+    const [question] = await db
+      .insert(messages)
+      .values({
+        conversation_id: conversationId,
+        message_group_id: group.id,
+        role: "user",
+        content,
+        type,
+        created_at: new Date(),
+      })
+      .returning();
+
+    // Short-term context: last 10 messages across the conversation.
+    const recent = await db
+      .select({ role: messages.role, content: messages.content })
+      .from(messages)
+      .where(eq(messages.conversation_id, conversationId))
+      .orderBy(desc(messages.created_at))
+      .limit(10);
+    const recentMessages = recent.reverse();
+
+    await chatQueue.add(`chat:${conversationId}`, {
+      operation: "addMessage",
+      conversationId,
+      messageGroupId: group.id,
+      recentMessages,
+      currentUserMessage: content,
       type,
-      created_at: new Date(),
-    })
-    .returning();
+      userId,
+      draftCount,
+    });
 
-  // Short-term context: last 10 messages across the conversation.
-  const recent = await db
-    .select({ role: messages.role, content: messages.content })
-    .from(messages)
-    .where(eq(messages.conversation_id, conversationId))
-    .orderBy(desc(messages.created_at))
-    .limit(10);
-  const recentMessages = recent.reverse();
-
-  await chatQueue.add(`chat:${conversationId}`, {
-    operation: "addMessage",
-    conversationId,
-    messageGroupId: group.id,
-    recentMessages,
-    currentUserMessage: content,
-    type,
+    return { data: toTurn(group, [question]) };
   });
-
-  return { data: toTurn(group, [question]) };
 }
 
 export async function getMessagesByConversation(
@@ -222,40 +253,44 @@ export async function refineMessage(
 
   const instruction = content ?? "";
 
-  // A refinement is a child turn tied to the parent response.
-  const [group] = await db
-    .insert(messageGroups)
-    .values({
-      conversation_id: parent.conversation_id,
-      parent_message_id: parent.id,
-      created_at: new Date(),
-      updated_at: new Date(),
-    })
-    .returning();
+  return withReservedDrafts(userId, 1, async (draftCount) => {
+    // A refinement is a child turn tied to the parent response.
+    const [group] = await db
+      .insert(messageGroups)
+      .values({
+        conversation_id: parent.conversation_id,
+        parent_message_id: parent.id,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .returning();
 
-  const [question] = await db
-    .insert(messages)
-    .values({
-      conversation_id: parent.conversation_id,
-      message_group_id: group.id,
-      role: "user",
-      content: instruction,
+    const [question] = await db
+      .insert(messages)
+      .values({
+        conversation_id: parent.conversation_id,
+        message_group_id: group.id,
+        role: "user",
+        content: instruction,
+        type: "SINGLE",
+        created_at: new Date(),
+      })
+      .returning();
+
+    await chatQueue.add(`refine:${group.id}`, {
+      operation: "refine",
+      conversationId: parent.conversation_id,
+      messageGroupId: group.id,
+      parentMessageId: parent.id,
+      recentMessages: [{ role: "assistant", content: parent.content }],
+      currentUserMessage: buildRefinePrompt(parent.content, instruction),
       type: "SINGLE",
-      created_at: new Date(),
-    })
-    .returning();
+      userId,
+      draftCount,
+    });
 
-  await chatQueue.add(`refine:${group.id}`, {
-    operation: "refine",
-    conversationId: parent.conversation_id,
-    messageGroupId: group.id,
-    parentMessageId: parent.id,
-    recentMessages: [{ role: "assistant", content: parent.content }],
-    currentUserMessage: buildRefinePrompt(parent.content, instruction),
-    type: "SINGLE",
+    return { data: toTurn(group, [question]) };
   });
-
-  return { data: toTurn(group, [question]) };
 }
 
 /**

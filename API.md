@@ -144,6 +144,28 @@ These are the core messaging endpoints. There are two distinct flows:
 - **addMessage** — user sends a message in a conversation → AI responds with messages in a message group
 - **refine** — user asks to rewrite an existing assistant message → AI responds with a refined message linked only by `parent_id`
 
+### Free-tier draft allowance
+
+Each user can generate **6 drafts in total**, across all conversations (`FREE_DRAFT_LIMIT` in `chat.usage.ts`). Every generated draft counts as one: a `MULTIPLE` prompt asks for up to 3, a `SINGLE` prompt or a refine for 1.
+
+- Drafts are reserved when the request arrives, so a `MULTIPLE` prompt with 2 left asks the model for 2.
+- With none left, `new/prompt`, `:id/prompt` and `refine` respond **`403`** (`You've used all 6 free drafts.`) and create nothing.
+- Drafts the model didn't produce (fewer options than asked, or a job that failed every retry) are refunded.
+- Every draft is capped at 280 characters: the model is told the limit, and longer output is cut at a word break.
+
+### `GET /api/chat/usage`
+
+The current user's draft allowance.
+
+**Response `200`:**
+```typescript
+{
+  used: number;       // drafts generated (or reserved for in-flight jobs)
+  limit: number;      // 6
+  remaining: number;  // limit - used, never below 0
+}
+```
+
 ---
 
 ### `POST /api/chat/new/prompt`

@@ -5,6 +5,7 @@ import {
   getMessagesByConversation,
   getThread as getThreadService,
   refineMessage as refineMessageService,
+  getDraftUsage,
 } from './chat.service.js';
 import { sendResponse } from '../../shared/utils/response.js';
 
@@ -82,6 +83,20 @@ export async function refineMessage(
     const { content } = req.body;
     const result = await refineMessageService(responseId as string, userId, content);
     sendResponse(res, 201, 'Refinement started', result.data);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getUsage(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.user!.user_id;
+    const usage = await getDraftUsage(userId);
+    sendResponse(res, 200, 'Draft usage retrieved successfully', usage);
   } catch (error) {
     next(error);
   }

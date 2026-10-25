@@ -1,7 +1,7 @@
 import { generateText, ModelMessage, embed } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 // import OpenAI from "openai";
-import { INSTRUCTIONS } from "../const.js";
+import { INSTRUCTIONS, MAX_DRAFT_LENGTH } from "../const.js";
 import { db } from "../db/index.js";
 import { sql } from "drizzle-orm";
 import { memories } from "../db/schema.js";
@@ -85,6 +85,8 @@ export class AIService {
     currentUserMessage: string,
     customInstructions?: ModelMessage,
     type: "SINGLE" | "MULTIPLE" = "SINGLE",
+    draftCount = 1,
+    maxLength = MAX_DRAFT_LENGTH,
   ): Promise<string> {
     const openai = this.getProvider();
 
@@ -93,13 +95,21 @@ export class AIService {
     const baseContent = (customInstructions ?? CHAT_SYSTEM_PROMPT).content;
     let systemText = typeof baseContent === "string" ? baseContent : "";
 
+    systemText +=
+      `\n\nIMPORTANT: Every post you write must be at most ${maxLength} characters, ` +
+      "counting spaces and punctuation. Each emoji counts as 2 characters and each link as 23. " +
+      "Keep it complete, not cut off.";
+
     // If multiple responses are requested, append explicit formatting instructions
-    if (type === "MULTIPLE") {
+    if (type === "MULTIPLE" && draftCount > 1) {
       systemText +=
         "\n\nIMPORTANT: The user has requested MULTIPLE response options. " +
-        "You must generate exactly 3 different responses in different tones. " +
+        `You must generate exactly ${draftCount} different responses in different tones. ` +
         "Separate each distinct response using EXACTLY this delimiter on its own line: ---OPTION_SEPARATOR---" +
-        "\nDo not number them or add any prefix text, just provide the 3 responses separated by the delimiter.";
+        `\nDo not number them or add any prefix text, just provide the ${draftCount} responses separated by the delimiter.`;
+    } else if (type === "MULTIPLE") {
+      systemText +=
+        "\n\nIMPORTANT: Write exactly one post. Do not offer alternatives or add any prefix text.";
     }
 
     // Try to pull relevant long-term memory for context
