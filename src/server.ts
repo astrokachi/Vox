@@ -1,6 +1,6 @@
 import { createServer } from "http";
 import app from "./app.js";
-import { keydbClient } from "./shared/utils/keydb-client.js";
+import { valkeyClient } from "./shared/utils/valkey-client.js";
 import { tweetReplyQueue, worker } from "./features/tweet-reply/tweet-reply.queue.js";
 import { chatQueue, worker as chatWorker } from "./features/chat/chat.queue.js";
 import {
@@ -99,8 +99,8 @@ const shutdown = async (_sig: string) => {
     await closePostQueue();
     console.log("Closed schedule post queue");
 
-    await keydbClient.quit();
-    console.log("Closed KeyDB client");
+    await valkeyClient.quit();
+    console.log("Closed Valkey client");
     process.exit(0);
   } catch (error) {
     console.error("Error during shutdown");

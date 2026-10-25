@@ -3,7 +3,7 @@ import { db } from "../../shared/db/index.js";
 import { messages } from "../../shared/db/schema.js";
 import { AIService } from "../../shared/services/ai.service.js";
 import { SocketService } from "../../shared/services/socket.service.js";
-import { getKeydbConnection } from "../../shared/lib/keydb-url.js";
+import { getValkeyConnection } from "../../shared/lib/valkey-url.js";
 import { ChatJobData, ChatJobResult } from "./chat.types.js";
 
 const aiService = new AIService();
@@ -11,7 +11,7 @@ const aiService = new AIService();
 export const chatQueue = new Queue<ChatJobData, ChatJobResult>(
   "chat-response",
   {
-    connection: getKeydbConnection(),
+    connection: getValkeyConnection(),
     defaultJobOptions: {
       attempts: 3,
       backoff: {
@@ -142,7 +142,7 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
     }
   },
   {
-    connection: getKeydbConnection(),
+    connection: getValkeyConnection(),
     concurrency: 5,
   },
 );

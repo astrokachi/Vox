@@ -3,14 +3,14 @@ import { XService } from "../../shared/services/x.service.js";
 import { AIService } from "../../shared/services/ai.service.js";
 import { TweetReplyJobData, TweetReplyJobResultType } from "./tweet-reply.types.js";
 import { xTokenRefresh } from "../auth/auth.service.js";
-import { keydbClient } from "../../shared/utils/keydb-client.js";
-import { getKeydbConnection } from "../../shared/lib/keydb-url.js";
+import { valkeyClient } from "../../shared/utils/valkey-client.js";
+import { getValkeyConnection } from "../../shared/lib/valkey-url.js";
 
 export const tweetReplyQueue = new Queue<
   TweetReplyJobData,
   TweetReplyJobResultType
 >("tweet-reply", {
-  connection: getKeydbConnection(),
+  connection: getValkeyConnection(),
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -27,7 +27,7 @@ export const worker = new Worker<TweetReplyJobData, TweetReplyJobResultType>(
     let { tweetUrl, accessToken, refreshToken, sessionID, customInstructions } = job.data;
     console.log(`processing job: ${job.id}`);
     try {
-      const sessionData = await keydbClient.get(`session:${sessionID}`);
+      const sessionData = await valkeyClient.get(`session:${sessionID}`);
 
       if (sessionData) {
         const freshTokens = JSON.parse(sessionData);
@@ -76,7 +76,7 @@ export const worker = new Worker<TweetReplyJobData, TweetReplyJobResultType>(
     }
   },
   {
-    connection: getKeydbConnection(),
+    connection: getValkeyConnection(),
     concurrency: 1,
   }
 );

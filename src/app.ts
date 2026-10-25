@@ -9,7 +9,7 @@ import chatRoute from "./features/chat/chat.route.js";
 import postRoute from "./features/post/post.route.js";
 import session from "express-session";
 import cors from "cors";
-import { keydbClient } from "./shared/utils/keydb-client.js";
+import { valkeyClient } from "./shared/utils/valkey-client.js";
 import { RedisStore } from "connect-redis";
 import requestLogger from "./shared/middleware/request-logger.js";
 import { globalErrorHandler } from "./shared/middleware/error-handler.js";
@@ -28,7 +28,7 @@ app.use(
 
 app.use(
   session({
-    store: new RedisStore({ client: keydbClient }),
+    store: new RedisStore({ client: valkeyClient }),
     secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false,

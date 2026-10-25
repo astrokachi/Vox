@@ -130,7 +130,7 @@ mark { background: var(--hl); color: inherit; padding: 0 1px; }
 </header>
 
 <div class="toolbar">
-  <input id="search" type="search" placeholder="Filter cards and table rows (for example: KeyDB, refresh, Memory)" aria-label="Search">
+  <input id="search" type="search" placeholder="Filter cards and table rows (for example: Valkey, refresh, Memory)" aria-label="Search">
   <button id="theme" type="button" aria-label="Toggle theme">Theme</button>
 </div>
 
@@ -144,7 +144,7 @@ x-bot is one Node.js process that is an Express API, a Socket.io server, and thr
 Users log in with X (OAuth 2.0 with PKCE), and the backend keeps their X tokens so it can post for them.
 The main feature is a chat that turns rough ideas into tweet drafts: the API saves the prompt, puts a job on a queue, and a worker calls GPT-4.1 through GitHub Models and pushes the answer back over Socket.io.
 Users can also publish a post now, schedule it for later (a delayed queue job), or give a list of tweet URLs and let the bot reply to each one at random times.
-Postgres (with pgvector) holds users, conversations, scheduled tweets and chat "memory"; KeyDB holds sessions, refresh tokens, OAuth state and all queues.
+Postgres (with pgvector) holds users, conversations, scheduled tweets and chat "memory"; Valkey holds sessions, refresh tokens, OAuth state and all queues.
 </div>
 
 <h3>1.1 Problem and requirements</h3>
@@ -175,31 +175,31 @@ Postgres (with pgvector) holds users, conversations, scheduled tweets and chat "
 </ul>
 
 <h3>1.3 High-level design</h3>
-<p>The browser client talks to one Express app over HTTPS with a Bearer JWT. The same HTTP server hosts Socket.io for push events. Slow or deferred work goes onto three BullMQ queues stored in KeyDB; workers in the same process consume them. Workers call two external APIs: the X API (through the official <code>@xdevplatform/xdk</code> SDK) and GitHub Models (through the Vercel AI SDK with an OpenAI-compatible adapter). Postgres is the source of truth for users, X tokens, tweets and chat; KeyDB holds short-lived auth state and the queues.</p>
+<p>The browser client talks to one Express app over HTTPS with a Bearer JWT. The same HTTP server hosts Socket.io for push events. Slow or deferred work goes onto three BullMQ queues stored in Valkey; workers in the same process consume them. Workers call two external APIs: the X API (through the official <code>@xdevplatform/xdk</code> SDK) and GitHub Models (through the Vercel AI SDK with an OpenAI-compatible adapter). Postgres is the source of truth for users, X tokens, tweets and chat; Valkey holds short-lived auth state and the queues.</p>
 
 <h3>1.4 One request end to end</h3>
 <p>The most important action is "send a chat prompt". See the <a href="#flow-chat">chat sequence diagram</a>. In short:</p>
 <ol class="steps">
   <li><strong>Sync.</strong> <code>POST /api/chat/:id/prompt</code> → <code>authMiddleware</code> verifies the JWT locally (no DB call).</li>
   <li><strong>Sync.</strong> <code>chat.service.addMessageToConversation</code> checks ownership, inserts a <code>MessageGroup</code> (a turn) and the user <code>Message</code>, reads the last 10 messages (3 to 4 SQL round trips, no transaction).</li>
-  <li><strong>Sync.</strong> <code>chatQueue.add</code> writes the job to KeyDB. The client gets <code>201</code> with the turn, without options.</li>
+  <li><strong>Sync.</strong> <code>chatQueue.add</code> writes the job to Valkey. The client gets <code>201</code> with the turn, without options.</li>
   <li><strong>Async.</strong> The worker emits <code>message:typing</code>, embeds the prompt (<em>external call 1</em>), runs a pgvector query, calls GPT-4.1 (<em>external call 2</em>), inserts 1 or 3 assistant messages and emits <code>message:received</code> for each.</li>
   <li><strong>Async, fire-and-forget.</strong> The worker embeds each option and the prompt and writes them to <code>Memory</code> (<em>external calls 3 to 6</em>).</li>
 </ol>
-<p>Almost all latency and failure risk of a chat turn comes from GitHub Models. The HTTP part depends only on Postgres and KeyDB.</p>
+<p>Almost all latency and failure risk of a chat turn comes from GitHub Models. The HTTP part depends only on Postgres and Valkey.</p>
 
 <h3>1.5 Data model and ownership</h3>
-<p>Postgres is the source of truth for everything durable. KeyDB holds copies and short-lived state. The one important copy is the <strong>X access/refresh token pair</strong>: it lives in both <code>XAccount</code> (Postgres) and <code>session:&lt;sessionID&gt;</code> (KeyDB), and the two copies are refreshed by different code paths that do not sync. See <a href="#data">Data</a> and <a href="#lineage">token lineage</a>.</p>
+<p>Postgres is the source of truth for everything durable. Valkey holds copies and short-lived state. The one important copy is the <strong>X access/refresh token pair</strong>: it lives in both <code>XAccount</code> (Postgres) and <code>session:&lt;sessionID&gt;</code> (Valkey), and the two copies are refreshed by different code paths that do not sync. See <a href="#data">Data</a> and <a href="#lineage">token lineage</a>.</p>
 
 <h3>1.6 The external world</h3>
-<p>The system depends on four outside systems at runtime: the X API, GitHub Models, a managed Postgres with pgvector, and a managed Redis-protocol store (KeyDB/Valkey). One browser client (at <code>CLIENT_URL</code>) is the only consumer. AWS S3 code exists but nothing calls it. See <a href="#external">External world</a>.</p>
+<p>The system depends on four outside systems at runtime: the X API, GitHub Models, a managed Postgres with pgvector, and a managed Redis-protocol store (Valkey). One browser client (at <code>CLIENT_URL</code>) is the only consumer. AWS S3 code exists but nothing calls it. See <a href="#external">External world</a>.</p>
 
 <h3>1.7 Coupling</h3>
-<p>This is a <strong>modular monolith</strong>: features live in separate folders, but they share one database schema module, one KeyDB client, and in-process singletons. The tightest hidden link is between <code>tweet-reply</code> and <code>auth</code>: they share the KeyDB key format <code>session:&lt;id&gt;</code> and a direct import of <code>xTokenRefresh</code>. The chat worker is tied to the HTTP process because it emits through the in-process <code>SocketService</code> singleton. See <a href="#coupling">Coupling</a>.</p>
+<p>This is a <strong>modular monolith</strong>: features live in separate folders, but they share one database schema module, one Valkey client, and in-process singletons. The tightest hidden link is between <code>tweet-reply</code> and <code>auth</code>: they share the Valkey key format <code>session:&lt;id&gt;</code> and a direct import of <code>xTokenRefresh</code>. The chat worker is tied to the HTTP process because it emits through the in-process <code>SocketService</code> singleton. See <a href="#coupling">Coupling</a>.</p>
 
 <h3>1.8 Failure modes (summary)</h3>
 <ul class="tight-list">
-  <li><strong>KeyDB down</strong>: login, token refresh, all queues and the express-session store fail. Chat prompts leave an empty turn in Postgres because the DB writes happen before <code>queue.add</code>.</li>
+  <li><strong>Valkey down</strong>: login, token refresh, all queues and the express-session store fail. Chat prompts leave an empty turn in Postgres because the DB writes happen before <code>queue.add</code>.</li>
   <li><strong>GitHub Models slow or down</strong>: chat jobs retry up to 3 × 4 times (BullMQ × AI SDK); the client gets a <code>message:error</code> on each failed attempt.</li>
   <li><strong>X API down</strong>: publish-now returns 500; scheduled posts retry then become <code>FAILED</code>; bulk replies are lost without retry.</li>
   <li>No explicit timeouts exist on X or LLM calls <span class="tag v">verified</span> (none in code; SDK defaults apply).</li>
@@ -224,7 +224,7 @@ flowchart LR
     api["Express API + Socket.io + BullMQ workers"]
   end
   pg[("PostgreSQL + pgvector")]
-  kdb[("KeyDB / Valkey")]
+  kdb[("Valkey")]
   xapi["X API v2 via xdk"]
   gh["GitHub Models: gpt-4.1 + embeddings"]
   s3["AWS S3 (code only, unused)"]
@@ -257,7 +257,7 @@ flowchart TB
   ai["AIService"]
   xs["XService"]
   db[("db + schema.ts")]
-  kdb[("keydbClient + BullMQ")]
+  kdb[("valkeyClient + BullMQ")]
   http --> auth & chat & post & reply
   chat -->|"queue.add"| kdb
   post -->|"delayed job"| kdb
@@ -294,7 +294,7 @@ flowchart TB
 
 <div class="card searchable" id="comp-http">
   <h4>HTTP server and bootstrap</h4>
-  <p>Builds the Express app (logging, cookies, JSON, CORS for one origin, express-session in KeyDB), mounts routers, starts Socket.io and all three workers, and handles shutdown. <span class="tag v">verified</span></p>
+  <p>Builds the Express app (logging, cookies, JSON, CORS for one origin, express-session in Valkey), mounts routers, starts Socket.io and all three workers, and handles shutdown. <span class="tag v">verified</span></p>
   <details><summary>Files and entry points</summary><ul>
     <li><code>src/server.ts</code> — process entry, workers, signals</li>
     <li><code>src/app.ts</code> — middleware order and route mounts</li>
@@ -304,10 +304,10 @@ flowchart TB
 
 <div class="card searchable" id="comp-auth">
   <h4>auth</h4>
-  <p>Sign in with X using OAuth 2.0 + PKCE. Upserts <code>User</code> (the user id is the X user id) and <code>XAccount</code>. Issues a 15-minute JWT and a 7-day opaque refresh token (hashed in KeyDB, sent as an httpOnly cookie on path <code>/auth/refresh</code>). <span class="tag v">verified</span></p>
+  <p>Sign in with X using OAuth 2.0 + PKCE. Upserts <code>User</code> (the user id is the X user id) and <code>XAccount</code>. Issues a 15-minute JWT and a 7-day opaque refresh token (hashed in Valkey, sent as an httpOnly cookie on path <code>/auth/refresh</code>). <span class="tag v">verified</span></p>
   <details><summary>Files</summary><ul>
     <li><code>src/features/auth/auth.controller.ts</code>, <code>auth.service.ts</code>, <code>auth.route.ts</code></li>
-    <li><code>src/shared/lib/jwt.ts</code>, <code>src/shared/lib/keydb.ts</code></li>
+    <li><code>src/shared/lib/jwt.ts</code>, <code>src/shared/lib/valkey.ts</code></li>
     <li><code>src/shared/middleware/auth.middleware.ts</code></li>
   </ul></details>
 </div>
@@ -335,7 +335,7 @@ flowchart TB
 
 <div class="card searchable" id="comp-reply">
   <h4>tweet-reply</h4>
-  <p>Takes tweet URLs and a time window, spreads jobs at random delays, then for each: reads the tweet (app bearer token), generates a short Web3-style reply with GPT-4.1, and posts it as a reply with the user's token from the KeyDB session. <span class="tag v">verified</span></p>
+  <p>Takes tweet URLs and a time window, spreads jobs at random delays, then for each: reads the tweet (app bearer token), generates a short Web3-style reply with GPT-4.1, and posts it as a reply with the user's token from the Valkey session. <span class="tag v">verified</span></p>
   <details><summary>Files</summary><ul>
     <li><code>src/features/tweet-reply/tweet-reply.service.ts</code>, <code>tweet-reply.queue.ts</code></li>
     <li><code>src/shared/utils/time-randomizer.ts</code>, <code>time-parser.ts</code></li>
@@ -370,7 +370,7 @@ flowchart TB
 <div class="card searchable" id="comp-data">
   <h4>Data access</h4>
   <p>Drizzle ORM over a <code>pg</code> pool, one schema file for all tables. Migrations are hand-written SQL applied by <code>scripts/run-migration.ts</code>, tracked in a <code>_migrations</code> table. <span class="tag v">verified</span></p>
-  <details><summary>Files</summary><ul><li><code>src/shared/db/index.ts</code>, <code>schema.ts</code></li><li><code>drizzle/migrations/000*.sql</code></li><li><code>src/shared/utils/keydb-client.ts</code>, <code>src/shared/lib/keydb-url.ts</code></li></ul></details>
+  <details><summary>Files</summary><ul><li><code>src/shared/db/index.ts</code>, <code>schema.ts</code></li><li><code>drizzle/migrations/000*.sql</code></li><li><code>src/shared/utils/valkey-client.ts</code>, <code>src/shared/lib/valkey-url.ts</code></li></ul></details>
 </div>
 
 </div>
@@ -387,7 +387,7 @@ sequenceDiagram
   participant C as Web client
   participant A as Express chat route
   participant P as Postgres
-  participant K as KeyDB BullMQ
+  participant K as Valkey BullMQ
   participant W as chat-response worker
   participant G as GitHub Models
   participant S as Socket.io
@@ -415,7 +415,7 @@ sequenceDiagram
   autonumber
   participant B as Browser
   participant A as Express auth
-  participant K as KeyDB
+  participant K as Valkey
   participant X as X OAuth2 and API
   participant P as Postgres
   B->>A: GET /auth/authorize
@@ -445,7 +445,7 @@ sequenceDiagram
   participant C as Web client
   participant A as Express post route
   participant P as Postgres
-  participant K as KeyDB BullMQ
+  participant K as Valkey BullMQ
   participant W as schedule-post worker
   participant X as X API
   C->>A: POST /api/post/schedule
@@ -465,7 +465,7 @@ sequenceDiagram
 <h3>4.4 Bulk AI replies (short)</h3>
 <ol class="steps">
   <li><strong>Sync.</strong> <code>POST /api/reply</code> (no JWT check). Joi parses <code>maximumTime</code> such as <code>"2h"</code> to milliseconds.</li>
-  <li><strong>Sync.</strong> <code>getSessionTokens(req.sessionID)</code> reads <code>session:&lt;sessionID&gt;</code> from KeyDB; it throws if nothing is there.</li>
+  <li><strong>Sync.</strong> <code>getSessionTokens(req.sessionID)</code> reads <code>session:&lt;sessionID&gt;</code> from Valkey; it throws if nothing is there.</li>
   <li><strong>Sync.</strong> One delayed job per URL with random cumulative delays inside the window.</li>
   <li><strong>Async.</strong> Worker re-reads the session tokens, gets the tweet text with the app bearer token, generates a reply, posts it with <code>in_reply_to_tweet_id</code>. Errors are caught and returned as a result, so BullMQ does not retry.</li>
 </ol>
@@ -486,7 +486,7 @@ flowchart LR
   auth["auth"]
   xacc["x-account"]
   db[("Postgres schema.ts")]
-  kdb[("KeyDB")]
+  kdb[("Valkey")]
   ext["X API + GitHub Models"]
   client -->|"REST + JWT contract"| api
   sock -.->|"socket events"| client
@@ -503,7 +503,7 @@ flowchart LR
   wchat ==>|"sync call inside job"| ext
   post ==>|"sync call"| ext
 </pre></div>
-<p class="caption">Thick lines are tight, thin lines are moderate, dashed lines are loose or async. Notice that Postgres and KeyDB have the highest fan-in.</p>
+<p class="caption">Thick lines are tight, thin lines are moderate, dashed lines are loose or async. Notice that Postgres and Valkey have the highest fan-in.</p>
 
 <p>Click a component to highlight its links and see its blast radius:</p>
 <div class="btnrow" id="coupling-buttons"></div>
@@ -516,10 +516,10 @@ flowchart LR
 
 <h3>Judgment</h3>
 <ul class="tight-list">
-  <li><strong>Hot spots (fan-in).</strong> <code>src/shared/db/schema.ts</code> + <code>db</code> (used by 7 modules), <code>keydbClient</code> (sessions, OAuth state, refresh tokens, X tokens, all queues), <code>XService</code> (auth, x-account, post, tweet-reply). <span class="tag v">verified</span></li>
-  <li><strong>Fan-out.</strong> <code>chat.queue.ts</code> worker depends on Postgres, KeyDB, GitHub Models and Socket.io at once. <span class="tag v">verified</span></li>
+  <li><strong>Hot spots (fan-in).</strong> <code>src/shared/db/schema.ts</code> + <code>db</code> (used by 7 modules), <code>valkeyClient</code> (sessions, OAuth state, refresh tokens, X tokens, all queues), <code>XService</code> (auth, x-account, post, tweet-reply). <span class="tag v">verified</span></li>
+  <li><strong>Fan-out.</strong> <code>chat.queue.ts</code> worker depends on Postgres, Valkey, GitHub Models and Socket.io at once. <span class="tag v">verified</span></li>
   <li><strong>Cycles.</strong> None found between modules. <code>chat.service</code> → <code>chat.queue</code> is one-way. <span class="tag v">verified</span> by reading imports.</li>
-  <li><strong>Modular or not?</strong> A modular monolith with leaks. Features are separated by folder, but <code>tweet-reply</code> reaches into <code>auth</code>'s KeyDB key format, two places hand-write raw SQL against table names (<code>chat.service.ts:524</code>, <code>ai.service.ts:850</code>), and the chat worker cannot run in a separate process without changing how it emits events.</li>
+  <li><strong>Modular or not?</strong> A modular monolith with leaks. Features are separated by folder, but <code>tweet-reply</code> reaches into <code>auth</code>'s Valkey key format, two places hand-write raw SQL against table names (<code>chat.service.ts:524</code>, <code>ai.service.ts:850</code>), and the chat worker cannot run in a separate process without changing how it emits events.</li>
   <li><strong>Co-change evidence.</strong> <code>auth.service.ts</code> and <code>auth.controller.ts</code> are the most-changed source files (21 and 18 commits). The XDK migration (2026-07-22) touched auth, post, tweet-reply and x-account in one series, which shows they all share the <code>XService</code> contract.</li>
 </ul>
 </section>
@@ -540,7 +540,7 @@ flowchart LR
   end
   subgraph infra["Data infrastructure"]
     pg[("Postgres + pgvector")]
-    kv[("KeyDB / Valkey")]
+    kv[("Valkey")]
     s3["AWS S3"]
   end
   subgraph clients["Clients"]
@@ -551,11 +551,11 @@ flowchart LR
   xs["XService"] --> xa
   aisvc["AIService"] --> gm
   dbm["db module"] --> pg
-  kc["keydbClient + BullMQ"] --> kv
+  kc["valkeyClient + BullMQ"] --> kv
   s3svc["s3.service (unused)"] -.-> s3
   web --> api["Express + Socket.io"]
 </pre></div>
-<p class="caption">Notice that every external system has exactly one adapter module, except Postgres and KeyDB, which many modules use directly.</p>
+<p class="caption">Notice that every external system has exactly one adapter module, except Postgres and Valkey, which many modules use directly.</p>
 
 <p>Click an external system to see which internal parts use it and what breaks if it fails:</p>
 <div class="btnrow" id="ext-buttons"></div>
@@ -569,7 +569,7 @@ flowchart LR
 <tr class="searchable"><td><strong>X API v2</strong><br>social platform API</td><td>Outbound</td><td><code>XService</code></td><td>xdk <code>Client</code>: <code>users.getMe</code>, <code>posts.create</code>, <code>posts.getById</code> (bearer <code>X_BEARER_TOKEN</code>), <code>media.upload</code> (base64 JSON) <span class="tag v">verified</span></td><td>Out: post text, images, reply target. In: tweet text and author name</td><td>Core for publish, schedule, reply</td><td>Publish: error to client. Schedule: 3 BullMQ attempts then <code>FAILED</code>. Reply: error swallowed, no retry. No idempotency key, so retries can double-post. <span class="tag v">verified</span></td><td>X API is paid per tier with low post caps and strict read caps <span class="tag i">inferred</span></td><td>Good adapter: only <code>XService</code> touches xdk types; <code>TweetData</code> shape leaks into job results</td></tr>
 <tr class="searchable"><td><strong>GitHub Models</strong><br>LLM + embeddings</td><td>Outbound</td><td><code>AIService</code></td><td>OpenAI-compatible HTTP at <code>BASE_URL</code> (<code>models.github.ai/inference</code> in <code>.env.example</code>), auth <code>GITHUB_TOKEN</code>, header <code>X-GitHub-Api-Version: 2022-11-28</code>; AI SDK <code>generateText</code> + <code>embed</code>, <code>maxRetries: 3</code> <span class="tag v">verified</span></td><td>Out: user prompts, recent chat history, retrieved memory, tweet text. In: generated text, 1536-dim vectors. <strong>User content leaves the system.</strong></td><td>Core for chat and replies</td><td>Chat: AI SDK retries × BullMQ retries, <code>message:error</code> event. RAG lookup failure is skipped. Memory writes are fire-and-forget. <span class="tag v">verified</span></td><td>Per-model request and token limits per day; low on free tier <span class="tag i">inferred</span></td><td>Easy: change <code>BASE_URL</code> + token + model names; AI SDK isolates the vendor</td></tr>
 <tr class="searchable"><td><strong>PostgreSQL + pgvector</strong><br>managed database</td><td>Outbound</td><td><code>src/shared/db</code> (used by 7 modules)</td><td><code>pg</code> pool via <code>DATABASE_URL</code>; <code>DIRECT_URL</code> is set but unused (Prisma leftover, suggests a pooled provider) <span class="tag i">inferred</span></td><td>All durable data, including <strong>X tokens in plaintext</strong></td><td>Everything except the reply worker</td><td>No retry, no statement timeout; errors bubble to 500 <span class="tag v">verified</span></td><td>Default pool size (10) <span class="tag i">inferred</span></td><td>Standard SQL, but pgvector <code>&lt;=&gt;</code> ties it to Postgres</td></tr>
-<tr class="searchable"><td><strong>KeyDB / Valkey</strong><br>Redis-protocol store</td><td>Outbound</td><td><code>keydb-client.ts</code> (node-redis) and BullMQ (ioredis, separate connections)</td><td><code>KEYDB_URL</code> (fallback <code>REDIS_URL</code>); <code>rediss://</code> for Aiven per <code>.env.example</code>; local <code>docker-compose.yml</code> runs KeyDB with AOF <span class="tag v">verified</span></td><td>OAuth state, refresh token hashes, <strong>X tokens</strong>, express sessions, all queue jobs (job data includes X tokens for replies)</td><td>Login, refresh, chat, schedule, reply all stop</td><td>node-redis reconnects by default; startup connect failure is only logged <span class="tag v">verified</span></td><td>Memory-bound; delayed jobs live here for up to the schedule horizon</td><td>Any Redis-protocol store works; that was the point of commit <code>4789a96</code></td></tr>
+<tr class="searchable"><td><strong>Valkey</strong><br>Redis-protocol store</td><td>Outbound</td><td><code>valkey-client.ts</code> (node-redis) and BullMQ (ioredis, separate connections)</td><td><code>VALKEY_URL</code> (fallback <code>REDIS_URL</code>); <code>rediss://</code> for Aiven per <code>.env.example</code>; local <code>compose.yml</code> runs Valkey with AOF <span class="tag v">verified</span></td><td>OAuth state, refresh token hashes, <strong>X tokens</strong>, express sessions, all queue jobs (job data includes X tokens for replies)</td><td>Login, refresh, chat, schedule, reply all stop</td><td>node-redis reconnects by default; startup connect failure is only logged <span class="tag v">verified</span></td><td>Memory-bound; delayed jobs live here for up to the schedule horizon</td><td>Any Redis-protocol store works; that was the point of commit <code>4789a96</code></td></tr>
 <tr class="searchable"><td><strong>AWS S3</strong><br>object store</td><td>Would be outbound</td><td><code>s3.service.ts</code>, <code>lib/s3.ts</code></td><td>Presigned PUT, 60 s</td><td>None today</td><td>None: nothing imports it <span class="tag v">verified</span></td><td>—</td><td>—</td><td>Dead code. <code>lib/s3.ts</code> throws at import if AWS env vars are missing</td></tr>
 <tr class="searchable"><td><strong>Web client</strong><br>first-party SPA</td><td>Inbound</td><td>All routers, <code>SocketService</code></td><td>REST JSON envelope (<code>sendResponse</code>), Socket.io events, cookie on <code>/auth/refresh</code>; CORS allows only <code>CLIENT_URL</code> <span class="tag v">verified</span></td><td>Prompts, images, tweet URLs; profile and drafts back</td><td>The only consumer</td><td>Must refetch if it misses a socket event</td><td>—</td><td>Contract documented in <code>API.md</code> (partly stale)</td></tr>
 </tbody></table></div>
@@ -578,7 +578,7 @@ flowchart LR
 <div class="diagram"><pre class="mermaid">
 flowchart LR
   xo["X OAuth2 token endpoint"] --> cb["exchangeCodeForTokens"]
-  cb --> ks[("KeyDB session:sessionID, plain JSON, no TTL")]
+  cb --> ks[("Valkey session:sessionID, plain JSON, no TTL")]
   cb --> xa[("Postgres XAccount, plaintext")]
   xa --> gat["getUserAccessToken refreshes if near expiry"]
   gat -->|"writes new pair"| xa
@@ -609,7 +609,7 @@ flowchart LR
   end
   subgraph stores["Data stores"]
     pg[("Postgres")]
-    kv[("KeyDB")]
+    kv[("Valkey")]
   end
   subgraph third["Third parties"]
     xapi2["X API"]
@@ -642,17 +642,17 @@ flowchart LR
 <div class="table-wrap"><table>
 <thead><tr><th>Dependency</th><th>When slow or down</th><th>Spreads to</th><th>Protection present</th><th>Missing</th></tr></thead>
 <tbody>
-<tr class="searchable"><td>KeyDB</td><td>OAuth start and callback fail; <code>/auth/refresh</code> fails so users are logged out in ≤15 min; <code>queue.add</code> throws</td><td>Chat: turn and question already written, so an <strong>empty turn</strong> stays forever (<code>chat.service.ts:369–407</code>). Schedule: <code>Tweet</code> row stays <code>SCHEDULED</code> with no job.</td><td>node-redis auto-reconnect</td><td>Transaction or outbox around DB write + enqueue</td></tr>
+<tr class="searchable"><td>Valkey</td><td>OAuth start and callback fail; <code>/auth/refresh</code> fails so users are logged out in ≤15 min; <code>queue.add</code> throws</td><td>Chat: turn and question already written, so an <strong>empty turn</strong> stays forever (<code>chat.service.ts:369–407</code>). Schedule: <code>Tweet</code> row stays <code>SCHEDULED</code> with no job.</td><td>node-redis auto-reconnect</td><td>Transaction or outbox around DB write + enqueue</td></tr>
 <tr class="searchable"><td>Postgres</td><td>All authenticated routes fail with 500</td><td>Workers fail and retry; the reply worker still works</td><td>BullMQ retries in workers</td><td>Health check endpoint, statement timeouts</td></tr>
 <tr class="searchable"><td>GitHub Models</td><td>Chat jobs take up to minutes, then fail</td><td>Up to 5 concurrent chat jobs blocked; client sees <code>message:error</code> on every attempt, then may later get a success</td><td>AI SDK <code>maxRetries: 3</code>, BullMQ 3 attempts, RAG skip on error</td><td>Timeout, single error event after the last attempt, circuit breaker</td></tr>
 <tr class="searchable"><td>X API</td><td>Publish returns 500 (all errors from <code>getUserAccessToken</code> are rewrapped as plain <code>Error</code>)</td><td>Schedule worker retries, then <code>FAILED</code>. Reply jobs: lost silently</td><td>Retries on schedule</td><td>Idempotency on retries, correct status codes (401 vs 500), retries for reply jobs</td></tr>
-<tr class="searchable"><td>Process crash</td><td>HTTP, sockets and all workers stop together</td><td>Jobs resume after restart (state in KeyDB)</td><td>Graceful shutdown on SIGTERM / SIGINT</td><td>Process manager config is not in the repo</td></tr>
+<tr class="searchable"><td>Process crash</td><td>HTTP, sockets and all workers stop together</td><td>Jobs resume after restart (state in Valkey)</td><td>Graceful shutdown on SIGTERM / SIGINT</td><td>Process manager config is not in the repo</td></tr>
 </tbody></table></div>
 
-<h3>Failure propagation: KeyDB outage</h3>
+<h3>Failure propagation: Valkey outage</h3>
 <div class="diagram"><pre class="mermaid">
 flowchart LR
-  kdb[("KeyDB down")]:::bad
+  kdb[("Valkey down")]:::bad
   oauth["/auth/authorize and callback"]:::hit
   refresh["/auth/refresh"]:::hit
   users["Users logged out within 15 min"]:::hit
@@ -667,7 +667,7 @@ flowchart LR
   classDef bad fill:#b3261e,color:#ffffff,stroke:#b3261e
   classDef hit fill:#f0b45a,color:#1d1c1a,stroke:#a15c00
 </pre></div>
-<p class="caption">Notice that KeyDB is a single point of failure for authentication, not only for background work.</p>
+<p class="caption">Notice that Valkey is a single point of failure for authentication, not only for background work.</p>
 
 <h3>Bottlenecks, in the order they will hit</h3>
 <ol class="steps">
@@ -719,7 +719,7 @@ flowchart LR
 <section id="run">
 <h2>9. Run and deploy</h2>
 <ul class="tight-list">
-  <li><strong>Local.</strong> <code>pnpm keydb:up</code> (KeyDB in Docker with AOF), <code>pnpm db:migrate</code> (applies <code>drizzle/migrations/*.sql</code>), <code>pnpm dev</code> (tsx watch). <span class="tag v">verified</span></li>
+  <li><strong>Local.</strong> <code>pnpm valkey:up</code> (Valkey in Docker with AOF), <code>pnpm db:migrate</code> (applies <code>drizzle/migrations/*.sql</code>), <code>pnpm dev</code> (tsx watch). <span class="tag v">verified</span></li>
   <li><strong>Build.</strong> <code>pnpm build</code> → <code>dist/</code>, <code>pnpm start</code> runs <code>dist/server.js</code>. <span class="tag v">verified</span></li>
   <li><strong>Tests.</strong> <code>pnpm test</code> runs Node's built-in test runner through tsx (<code>src/**/*.test.ts</code>), not Vitest. 4 test files: chat turns, post service, post validation, schedule validation. <span class="tag v">verified</span></li>
   <li><strong>Deploy.</strong> No Dockerfile for the app, no CI workflow, no IaC in the repo. Production hosting is unknown. Comments in <code>.env.example</code> mention Aiven for the Redis store. <span class="tag i">inferred</span></li>
@@ -730,7 +730,7 @@ flowchart LR
   <li>Auth: <code>ACCESS_TOKEN_SECRET</code> (required at import), <code>SESSION_SECRET</code></li>
   <li>X: <code>X_CLIENT_ID</code>, <code>X_CLIENT_SECRET</code>, <code>X_BEARER_TOKEN</code>; unused: <code>X_ACCESS_TOKEN</code>, <code>X_ACCESS_TOKEN_SECRET</code>, <code>X_API_KEY</code>, <code>X_API_KEY_SECRET</code></li>
   <li>AI: <code>BASE_URL</code>, <code>GITHUB_TOKEN</code></li>
-  <li>Stores: <code>DATABASE_URL</code>, <code>DIRECT_URL</code> (unused), <code>KEYDB_URL</code> / <code>REDIS_URL</code></li>
+  <li>Stores: <code>DATABASE_URL</code>, <code>DIRECT_URL</code> (unused), <code>VALKEY_URL</code> / <code>REDIS_URL</code></li>
   <li>S3 (unused path): <code>AWS_REGION</code>, <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, <code>AWS_S3_BUCKET</code></li>
 </ul></details>
 </section>
@@ -758,11 +758,11 @@ erDiagram
 <tr class="searchable"><td><code>Tweet</code></td><td>Postgres</td><td>post</td><td>Status <code>DRAFT | SENT | SCHEDULED | CANCELLED | FAILED</code>. <code>img</code> column unused.</td></tr>
 <tr class="searchable"><td><code>Conversation</code>, <code>MessageGroup</code>, <code>Message</code></td><td>Postgres</td><td>chat, conversation</td><td>Turn model from migration 0000. Indexes from 0001 match the read paths.</td></tr>
 <tr class="searchable"><td><code>Memory</code></td><td>Postgres (pgvector)</td><td>AIService</td><td>1536-dim embedding. FK to Conversation has no <code>ON DELETE CASCADE</code>. <code>deleted_at</code> defaults to <code>now()</code> on every row.</td></tr>
-<tr class="searchable"><td><code>oauth:&lt;state&gt;</code></td><td>KeyDB</td><td>auth</td><td>PKCE verifier, 600 s TTL</td></tr>
-<tr class="searchable"><td><code>rtKey:&lt;sha256&gt;</code>, <code>rtUser:&lt;userId&gt;</code></td><td>KeyDB</td><td>auth (<code>lib/keydb.ts</code>)</td><td>Refresh token hash → user id, 7 days; set of hashes per user</td></tr>
-<tr class="searchable"><td><code>session:&lt;sessionID&gt;</code></td><td>KeyDB</td><td>auth, read by tweet-reply</td><td>X token pair as JSON, <strong>no TTL</strong></td></tr>
-<tr class="searchable"><td><code>sess:&lt;id&gt;</code></td><td>KeyDB</td><td>express-session (connect-redis default prefix)</td><td>Never written, because nothing sets <code>req.session</code> and <code>saveUninitialized</code> is false <span class="tag i">inferred</span></td></tr>
-<tr class="searchable"><td><code>bull:chat-response:*</code>, <code>bull:schedule-post:*</code>, <code>bull:tweet-reply:*</code></td><td>KeyDB</td><td>BullMQ</td><td>Completed jobs removed; failed jobs kept</td></tr>
+<tr class="searchable"><td><code>oauth:&lt;state&gt;</code></td><td>Valkey</td><td>auth</td><td>PKCE verifier, 600 s TTL</td></tr>
+<tr class="searchable"><td><code>rtKey:&lt;sha256&gt;</code>, <code>rtUser:&lt;userId&gt;</code></td><td>Valkey</td><td>auth (<code>lib/valkey.ts</code>)</td><td>Refresh token hash → user id, 7 days; set of hashes per user</td></tr>
+<tr class="searchable"><td><code>session:&lt;sessionID&gt;</code></td><td>Valkey</td><td>auth, read by tweet-reply</td><td>X token pair as JSON, <strong>no TTL</strong></td></tr>
+<tr class="searchable"><td><code>sess:&lt;id&gt;</code></td><td>Valkey</td><td>express-session (connect-redis default prefix)</td><td>Never written, because nothing sets <code>req.session</code> and <code>saveUninitialized</code> is false <span class="tag i">inferred</span></td></tr>
+<tr class="searchable"><td><code>bull:chat-response:*</code>, <code>bull:schedule-post:*</code>, <code>bull:tweet-reply:*</code></td><td>Valkey</td><td>BullMQ</td><td>Completed jobs removed; failed jobs kept</td></tr>
 </tbody></table></div>
 </section>
 
@@ -791,7 +791,7 @@ erDiagram
   <div><b>2026-06-26/30</b> — Port to Drizzle, per-message persistence, refinement tree, JWT access/refresh pair.</div>
   <div><b>2026-07-01/02</b> — Turn-based message model (migration 0000) and read indexes (0001).</div>
   <div><b>2026-07-09/22</b> — Post endpoint with images, then full migration from raw fetch to the X SDK.</div>
-  <div><b>2026-09-10</b> — Redis → KeyDB URL, scheduled posts (0002), Prisma removed.</div>
+  <div><b>2026-09-10</b> — Redis → Valkey URL, scheduled posts (0002), Prisma removed.</div>
 </div>
 
 <h3>Most-changed files (all history)</h3>
@@ -840,9 +840,9 @@ erDiagram
 <tr class="searchable"><td>Memory</td><td>A stored message with its embedding, used for RAG inside one conversation.</td></tr>
 <tr class="searchable"><td>RAG</td><td>Retrieval-augmented generation: add the most similar past messages to the system prompt.</td></tr>
 <tr class="searchable"><td>Access token</td><td>The 15-minute JWT the client sends as <code>Authorization: Bearer</code>.</td></tr>
-<tr class="searchable"><td>Refresh token</td><td>A random 40-byte token in an httpOnly cookie; KeyDB stores only its SHA-256 hash.</td></tr>
+<tr class="searchable"><td>Refresh token</td><td>A random 40-byte token in an httpOnly cookie; Valkey stores only its SHA-256 hash.</td></tr>
 <tr class="searchable"><td>X tokens</td><td>The user's OAuth tokens for the X API. Different from the app's own access/refresh tokens.</td></tr>
-<tr class="searchable"><td>KeyDB</td><td>A Redis-compatible server. The code also accepts Valkey or Redis through <code>KEYDB_URL</code>.</td></tr>
+<tr class="searchable"><td>Valkey</td><td>A Redis-compatible server, reached through <code>VALKEY_URL</code> (any Redis-protocol store works).</td></tr>
 <tr class="searchable"><td>xdk</td><td><code>@xdevplatform/xdk</code>, the official X API TypeScript SDK.</td></tr>
 <tr class="searchable"><td>GitHub Models</td><td>GitHub's hosted model API with an OpenAI-compatible interface.</td></tr>
 <tr class="searchable"><td>gLumi / gm</td><td>Web3 community greetings the reply prompt is told to mirror.</td></tr>
@@ -856,7 +856,7 @@ erDiagram
 const COUPLING = [
   ["Web client", "HTTP routes", "REST JSON + Bearer JWT", "sync", "contract, runtime", "moderate", "Client cannot load or send anything", "v"],
   ["SocketService", "Web client", "Socket.io events message:*", "async", "contract (event names, payload shape)", "moderate", "Client misses pushes; must refetch messages", "v"],
-  ["chat service", "chat worker", "BullMQ job chat-response in KeyDB", "async", "temporal (loose), contract (ChatJobData)", "loose", "Turns stay empty until the worker runs", "v"],
+  ["chat service", "chat worker", "BullMQ job chat-response in Valkey", "async", "temporal (loose), contract (ChatJobData)", "loose", "Turns stay empty until the worker runs", "v"],
   ["chat worker", "SocketService", "in-process singleton getInstance()", "sync", "code, deploy (same process)", "tight", "Worker throws; cannot run worker in another process", "v"],
   ["chat worker", "GitHub Models", "AIService.generateChatResponse", "sync inside job", "runtime, vendor", "tight", "Every chat turn fails after retries", "v"],
   ["chat service", "Postgres", "Drizzle + raw recursive CTE", "sync", "data, schema", "tight", "All chat routes fail", "v"],
@@ -864,15 +864,15 @@ const COUPLING = [
   ["post + worker", "x-account", "getUserAccessToken()", "sync", "code, data (XAccount)", "tight", "Publish and scheduled posts fail with 500", "v"],
   ["post + worker", "X API", "XService.createPost / uploadMedia", "sync", "runtime, vendor", "tight", "Publish fails; schedule retries then FAILED", "v"],
   ["tweet-reply + worker", "auth", "imports xTokenRefresh; shares session:<id> key format", "sync", "code, data, semantic", "tight", "Token refresh path breaks silently if auth changes the key", "v"],
-  ["tweet-reply + worker", "KeyDB", "reads session:<sessionID>", "sync", "data", "tight", "No jobs can be queued", "v"],
+  ["tweet-reply + worker", "Valkey", "reads session:<sessionID>", "sync", "data", "tight", "No jobs can be queued", "v"],
   ["auth", "x-account", "createXAccount(), getXUserDetails()", "sync", "code", "moderate", "Login fails at callback", "v"],
-  ["auth", "KeyDB", "oauth:, rtKey:, rtUser:, session: keys", "sync", "data, infrastructure", "tight", "Login and refresh fail; users logged out in 15 min", "v"],
+  ["auth", "Valkey", "oauth:, rtKey:, rtUser:, session: keys", "sync", "data, infrastructure", "tight", "Login and refresh fail; users logged out in 15 min", "v"],
   ["x-account", "Postgres", "XAccount table", "sync", "data", "tight", "No X token available for any write", "v"],
   ["x-account", "X OAuth2", "oauth2.refreshToken()", "sync", "runtime, vendor", "moderate", "Expired tokens cannot be refreshed; user must log in again", "v"],
 ];
 
 const BLAST = {
-  "KeyDB": "Login, token refresh, express-session, every queue. Chat prompts leave empty turns; scheduled posts lose their jobs. Effectively a full outage after 15 minutes.",
+  "Valkey": "Login, token refresh, express-session, every queue. Chat prompts leave empty turns; scheduled posts lose their jobs. Effectively a full outage after 15 minutes.",
   "Postgres": "Every authenticated route, the chat and schedule workers, and login (user upsert). The reply worker alone keeps running.",
   "chat worker": "Chat turns stay empty. HTTP routes still work. Clients wait forever for socket events.",
   "SocketService": "Chat worker throws on emit, so jobs fail and retry. Answers are still saved only if the error happens after insert.",
@@ -893,23 +893,23 @@ const EXTERNAL = {
   "X API": { users: ["post + worker", "tweet-reply + worker", "auth"], breaks: "Publish-now returns 500. Scheduled posts retry 3 times over ~6 s, then FAILED. Reply jobs report success:false and are not retried. Login also fails (users.getMe)." },
   "GitHub Models": { users: ["chat worker", "tweet-reply + worker"], breaks: "Chat jobs retry (AI SDK 3× inside each of 3 BullMQ attempts) and send message:error each time. RAG retrieval is skipped on error. Memory writes fail silently. Replies are lost." },
   "Postgres": { users: ["chat service", "chat worker", "post + worker", "x-account", "auth"], breaks: "All authenticated routes return 500. Login fails at user upsert. Workers retry." },
-  "KeyDB": { users: ["auth", "chat service", "post + worker", "tweet-reply + worker"], breaks: "Login, refresh and all queues fail. Users are logged out within 15 minutes. Chat prompts leave empty turns." },
+  "Valkey": { users: ["auth", "chat service", "post + worker", "tweet-reply + worker"], breaks: "Login, refresh and all queues fail. Users are logged out within 15 minutes. Chat prompts leave empty turns." },
   "AWS S3": { users: [], breaks: "Nothing. No module imports s3.service.ts." },
 };
 
 const RISKS = [
-  ["high", "Logout never revokes the refresh token", "The cookie path is <code>/auth/refresh</code>, so the browser never sends it to <code>/auth/logout</code>. Even if it did, <code>logoutUser</code> calls <code>deleteRefreshToken(userId, tokenHash)</code> while the function expects <code>(tokenHash, userId)</code>, and the call inside is not awaited. A stolen refresh cookie stays valid for 7 days.", "auth.controller.ts:27, auth.service.ts:127, lib/keydb.ts:20", "v"],
+  ["high", "Logout never revokes the refresh token", "The cookie path is <code>/auth/refresh</code>, so the browser never sends it to <code>/auth/logout</code>. Even if it did, <code>logoutUser</code> calls <code>deleteRefreshToken(userId, tokenHash)</code> while the function expects <code>(tokenHash, userId)</code>, and the call inside is not awaited. A stolen refresh cookie stays valid for 7 days.", "auth.controller.ts:27, auth.service.ts:127, lib/valkey.ts:20", "v"],
   ["high", "X access tokens are written to logs", "<code>console.log(\"Access token\", xAccount.access_token)</code> runs on every publish and scheduled post.", "x-account.service.ts:52", "v"],
   ["high", "Bulk reply route has no JWT check and likely never finds a session", "<code>/api/reply</code> has no <code>authMiddleware</code>. It looks up tokens by <code>req.sessionID</code>, but no code writes to <code>req.session</code> and <code>saveUninitialized</code> is false, so the session cookie is never set and each request gets a new id. Likely result: always 500 \"No session data found\".", "tweet-reply.route.ts:7, app.ts:30, sessionData.ts:5", "i"],
   ["high", "Deleting a used conversation probably fails", "<code>Memory.conversation_id</code> references <code>Conversation</code> without cascade (Prisma default was RESTRICT). Every chat turn writes Memory rows, so <code>DELETE /api/conversations/:id</code> hits a foreign key error. <code>API.md</code> says it cascades.", "schema.ts:160, conversation.service.ts:99", "i"],
   ["high", "Second user with no email may fail to sign up", "<code>User.email</code> is unique and NOT NULL. The email is read through <code>(user as any).confirmed_email</code>, but <code>users.getMe</code> only requests <code>profile_image_url</code>. If the email is empty, the second new user collides on <code>\"\"</code>.", "x.service.ts:21-30, schema.ts:29", "i"],
-  ["med", "Two copies of X tokens with separate refresh paths", "XAccount (Postgres) and <code>session:&lt;id&gt;</code> (KeyDB) are refreshed independently. With rotating refresh tokens, one refresh invalidates the other copy.", "x-account.service.ts:56, auth.service.ts:90", "i"],
+  ["med", "Two copies of X tokens with separate refresh paths", "XAccount (Postgres) and <code>session:&lt;id&gt;</code> (Valkey) are refreshed independently. With rotating refresh tokens, one refresh invalidates the other copy.", "x-account.service.ts:56, auth.service.ts:90", "i"],
   ["med", "Reply worker never retries", "The worker catches every error and returns <code>{success:false}</code>, so BullMQ marks the job complete. The log line \"will retry\" is wrong.", "tweet-reply.queue.ts:67-90", "v"],
   ["med", "Non-idempotent retries", "Chat: a retry after partial inserts duplicates options. Schedule: the X post happens before the DB update, so a DB failure causes a second post.", "chat.queue.ts:82, post.queue.ts:62", "v"],
   ["med", "DB write then enqueue, with no outbox", "If <code>queue.add</code> fails, the chat turn or scheduled Tweet row exists with no job.", "chat.service.ts:122-159, post.service.ts:111", "v"],
   ["med", "Any authenticated socket can join any conversation room", "No ownership check on <code>conversation:join</code>. Conversation ids are UUIDs, so this needs a leaked id.", "socket.service.ts:44", "v"],
   ["med", "Wrong status codes from getUserAccessToken", "All errors (404, 401 re-authenticate) are rewrapped as a plain <code>Error</code>, so the client gets 500 and cannot prompt a re-login.", "x-account.service.ts:80-83", "v"],
-  ["med", "X tokens stored in plaintext, and in job data", "XAccount stores tokens unencrypted; reply jobs copy them into KeyDB job payloads; <code>session:</code> keys never expire.", "schema.ts:42, tweet-reply.service.ts:31", "v"],
+  ["med", "X tokens stored in plaintext, and in job data", "XAccount stores tokens unencrypted; reply jobs copy them into Valkey job payloads; <code>session:</code> keys never expire.", "schema.ts:42, tweet-reply.service.ts:31", "v"],
   ["low", "No timeouts on external calls", "X and LLM calls use SDK defaults. A hung call holds a worker slot.", "x.service.ts, ai.service.ts", "v"],
   ["low", "Conversation list loads all rows", "Pagination happens in memory after loading every conversation.", "conversation.service.ts:28", "v"],
   ["low", "Error event on every retry", "The chat worker emits <code>message:error</code> before rethrowing, even when BullMQ will retry and may succeed.", "chat.queue.ts:127", "v"],

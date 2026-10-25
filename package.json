@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/run-migration.ts",
     "memories:reembed": "tsx scripts/reembed-memories.ts",
-    "keydb:up": "docker compose up -d keydb",
-    "keydb:down": "docker compose down",
-    "keydb:logs": "docker compose logs -f keydb"
+    "valkey:up": "docker compose up -d valkey",
+    "valkey:down": "docker compose down",
+    "valkey:logs": "docker compose logs -f valkey"
   },
   "repository": {
     "type": "git",
