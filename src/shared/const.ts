@@ -14,4 +14,14 @@ export const INSTRUCTIONS: ModelMessage = {
 /** X's post length limit for standard accounts, in X's weighted characters. */
 export const MAX_DRAFT_LENGTH = 280;
 
+/**
+ * The tones of a prompt's drafts, in the order they're written. The client
+ * labels drafts by position (Standard, Playful, Educative), so keep both in step.
+ */
+export const DRAFT_TONES = [
+  "standard: clear and direct",
+  "playful: light and witty",
+  "educative: teaches the reader something concrete",
+];
+
 export const REDIRECT_URI = `${process.env.APP_URL!}/auth/callback`;
