@@ -62,6 +62,19 @@ test("toTurn: SINGLE refine turn carries parentMessageId and one option", () => 
   assert.equal(turn.response.options[0].id, "a3");
 });
 
+test("toTurn: options carry their posted state, unposted ones null", () => {
+  const sent = { x_post_id: "x1", content: "opt1", published_at: new Date("2026-07-01T10:00:00Z") };
+  const rows: MessageRow[] = [
+    msg({ id: "q1", role: "user", type: "MULTIPLE" }),
+    msg({ id: "a1", role: "assistant", type: "MULTIPLE", created_at: new Date("2026-07-01T09:00:04Z") }),
+    msg({ id: "a2", role: "assistant", type: "MULTIPLE", created_at: new Date("2026-07-01T09:00:05Z") }),
+  ];
+
+  const turn = toTurn(group({}), rows, new Map([["a1", sent]]));
+
+  assert.deepEqual(turn.response.options.map((o) => o.posted), [sent, null]);
+});
+
 test("toTurn: pending turn (no assistant yet) has empty options", () => {
   const turn = toTurn(group({}), [msg({ id: "q1", role: "user", type: "MULTIPLE" })]);
   assert.equal(turn.response.type, "MULTIPLE");

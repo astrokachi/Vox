@@ -1,61 +1,177 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { XService } from "../../shared/services/x.service.js";
 import {
+  contentHash,
+  listSentPosts,
   publishPost,
   schedulePost,
   listScheduledPosts,
   cancelScheduledPost,
   shouldProcessScheduledTweet,
 } from "./post.service.js";
-import { NotFoundError, ValidationError } from "../../shared/lib/errors.js";
+import { ConflictError, NotFoundError, ValidationError } from "../../shared/lib/errors.js";
 
-test("publishPost without files calls XService.createPost directly", async () => {
-  const mockCreatePost = mock.method(XService.prototype, "createPost", () =>
-    Promise.resolve({ id: "1", text: "Hello", edit_history_tweet_ids: ["1"] }),
-  );
-  const mockUploadMedia = mock.method(XService.prototype, "uploadMedia");
+type Deps = Parameters<typeof publishPost>[1] & object;
+type TweetRow = Awaited<ReturnType<Deps["reserve"]>> & object;
 
-  const result = await publishPost("mock-token", "Hello");
+const xPost = { id: "x-1", text: "Hello", edit_history_tweet_ids: ["x-1"] };
 
-  assert.equal(result.text, "Hello");
-  assert.equal(mockCreatePost.mock.callCount(), 1);
-  assert.equal(mockUploadMedia.mock.callCount(), 0);
-
-  mock.reset();
+const tweetRow = (overrides: Partial<TweetRow> = {}): TweetRow => ({
+  id: "tweet-1",
+  user_id: "user-1",
+  content: "Hello",
+  status: "DRAFT",
+  dateScheduled: new Date(),
+  img: null,
+  x_post_id: null,
+  published_at: null,
+  conversation_id: null,
+  message_id: null,
+  content_hash: contentHash("Hello"),
+  created_at: new Date(),
+  updated_at: new Date(),
+  ...overrides,
 });
 
-test("publishPost with files uploads each then posts with all media_ids", async () => {
-  const mockCreatePost = mock.method(XService.prototype, "createPost", () =>
-    Promise.resolve({
-      id: "2",
-      text: "Hello with images",
-      edit_history_tweet_ids: ["2"],
+const publishDeps = (overrides: Partial<Deps> = {}): Deps => ({
+  findDraft: mock.fn(async () => ({ conversation_id: "conv-1" })),
+  reserve: mock.fn(async () => tweetRow()),
+  findGuard: mock.fn(async () => undefined),
+  markSent: mock.fn(async () => undefined),
+  markFailed: mock.fn(async () => undefined),
+  sendToX: mock.fn(async () => xPost),
+  ...overrides,
+});
+
+const input = { userId: "user-1", accessToken: "token", message: "Hello" };
+
+const callCount = (fn: unknown) => (fn as ReturnType<typeof mock.fn>).mock.callCount();
+const firstArgs = (fn: unknown) =>
+  (fn as ReturnType<typeof mock.fn>).mock.calls[0].arguments as unknown[];
+
+test("contentHash ignores surrounding whitespace", () => {
+  assert.equal(contentHash("  Hello\n"), contentHash("Hello"));
+  assert.notEqual(contentHash("Hello"), contentHash("Hello!"));
+});
+
+test("publishPost reserves, posts to X, then marks the row sent", async () => {
+  const deps = publishDeps();
+  const result = await publishPost({ ...input, draftId: "msg-1" }, deps);
+
+  assert.equal(result.id, "x-1");
+  const [reserved] = firstArgs(deps.reserve) as [Record<string, unknown>];
+  assert.equal(reserved.conversation_id, "conv-1");
+  assert.equal(reserved.message_id, "msg-1");
+  assert.equal(reserved.content_hash, contentHash("Hello"));
+  assert.deepEqual(firstArgs(deps.markSent), ["tweet-1", "x-1"]);
+  assert.equal(callCount(deps.markFailed), 0);
+});
+
+test("publishPost without a draft skips the draft lookup", async () => {
+  const deps = publishDeps();
+  await publishPost(input, deps);
+
+  assert.equal(callCount(deps.findDraft), 0);
+  const [reserved] = firstArgs(deps.reserve) as [Record<string, unknown>];
+  assert.equal(reserved.conversation_id, null);
+  assert.equal(reserved.message_id, null);
+});
+
+test("publishPost rejects a draft the user doesn't own", async () => {
+  const deps = publishDeps({ findDraft: mock.fn(async () => undefined) });
+  await assert.rejects(
+    () => publishPost({ ...input, draftId: "someone-elses" }, deps),
+    (err: unknown) => err instanceof NotFoundError,
+  );
+  assert.equal(callCount(deps.reserve), 0);
+  assert.equal(callCount(deps.sendToX), 0);
+});
+
+test("publishPost refuses text that was already posted, with the post's id", async () => {
+  const deps = publishDeps({
+    reserve: mock.fn(async () => undefined),
+    findGuard: mock.fn(async () => tweetRow({ status: "SENT", x_post_id: "x-0" })),
+  });
+
+  await assert.rejects(
+    () => publishPost(input, deps),
+    (err: unknown) =>
+      err instanceof ConflictError &&
+      (err.details as { x_post_id: string }).x_post_id === "x-0",
+  );
+  assert.equal(callCount(deps.sendToX), 0);
+});
+
+test("publishPost refuses text that is being published right now", async () => {
+  const deps = publishDeps({
+    reserve: mock.fn(async () => undefined),
+    findGuard: mock.fn(async () => tweetRow({ status: "DRAFT" })),
+  });
+
+  await assert.rejects(
+    () => publishPost(input, deps),
+    (err: unknown) => err instanceof ConflictError,
+  );
+  assert.equal(callCount(deps.sendToX), 0);
+  assert.equal(callCount(deps.markFailed), 0);
+});
+
+test("publishPost clears a stale reservation and publishes", async () => {
+  let reserveCalls = 0;
+  const deps = publishDeps({
+    reserve: mock.fn(async () => (reserveCalls++ === 0 ? undefined : tweetRow({ id: "tweet-2" }))),
+    findGuard: mock.fn(async () =>
+      tweetRow({ id: "stale", created_at: new Date(Date.now() - 10 * 60 * 1000) }),
+    ),
+  });
+
+  const result = await publishPost(input, deps);
+
+  assert.equal(result.id, "x-1");
+  assert.deepEqual(firstArgs(deps.markFailed), ["stale"]);
+  assert.deepEqual(firstArgs(deps.markSent), ["tweet-2", "x-1"]);
+});
+
+test("publishPost releases the reservation when X fails", async () => {
+  const deps = publishDeps({
+    sendToX: mock.fn(async () => {
+      throw new Error("X is down");
     }),
-  );
-  const mockUploadMedia = mock.method(XService.prototype, "uploadMedia", (_buf: Buffer, mime: string) =>
-    Promise.resolve(mime === "image/png" ? "media-1" : "media-2"),
-  );
+  });
 
-  const files = [
-    { buffer: Buffer.from("img1"), mimetype: "image/png" },
-    { buffer: Buffer.from("img2"), mimetype: "image/jpeg" },
-  ] as Express.Multer.File[];
+  await assert.rejects(() => publishPost(input, deps), /X is down/);
+  assert.deepEqual(firstArgs(deps.markFailed), ["tweet-1"]);
+  assert.equal(callCount(deps.markSent), 0);
+});
 
-  const result = await publishPost("mock-token", "Hello with images", files);
+test("publishPost still succeeds when marking sent fails after X accepted it", async () => {
+  const deps = publishDeps({
+    markSent: mock.fn(async () => {
+      throw new Error("db down");
+    }),
+  });
 
-  assert.equal(result.text, "Hello with images");
-  assert.equal(mockUploadMedia.mock.callCount(), 2);
-  assert.equal(mockCreatePost.mock.callCount(), 1);
+  const result = await publishPost(input, deps);
+  assert.equal(result.id, "x-1");
+});
 
-  const [, , mediaIdsArg] = mockCreatePost.mock.calls[0].arguments as [
-    string,
-    string | undefined,
-    string[],
-  ];
-  assert.deepEqual(mediaIdsArg, ["media-1", "media-2"]);
+test("listSentPosts fetches one extra row to detect the next page", async () => {
+  const rows = ["a", "b", "c"].map((id) => ({
+    id,
+    content: id,
+    x_post_id: null,
+    conversation_id: null,
+    conversation_title: null,
+    message_id: null,
+    published_at: new Date(),
+  }));
+  const listSent = mock.fn(async () => rows);
 
-  mock.reset();
+  const page = await listSentPosts("user-1", "cursor-1", 2, { listSent });
+
+  assert.deepEqual(listSent.mock.calls[0].arguments, ["user-1", "cursor-1", 3]);
+  assert.deepEqual(page.data.map((r) => r.id), ["a", "b"]);
+  assert.deepEqual(page.pagination, { nextCursor: "b", hasNextPage: true });
 });
 
 const scheduledTweet = {
@@ -65,6 +181,11 @@ const scheduledTweet = {
   status: "SCHEDULED" as const,
   dateScheduled: new Date(Date.now() + 120_000),
   img: null,
+  x_post_id: null,
+  published_at: null,
+  conversation_id: null,
+  message_id: null,
+  content_hash: null,
   created_at: new Date(),
   updated_at: new Date(),
 };

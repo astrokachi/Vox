@@ -3,6 +3,7 @@ import { authMiddleware } from "../../shared/middleware/auth.middleware.js";
 import { upload, validatePost, validateSchedulePost } from "./post.validation.js";
 import {
   publishPost,
+  listSentPosts,
   schedulePost,
   listScheduledPosts,
   cancelScheduledPost,
@@ -11,6 +12,7 @@ import {
 const router: Router = Router();
 
 router.post("/", authMiddleware, upload.array("media"), validatePost, publishPost);
+router.get("/sent", authMiddleware, listSentPosts);
 router.post("/schedule", authMiddleware, validateSchedulePost, schedulePost);
 router.get("/scheduled", authMiddleware, listScheduledPosts);
 router.delete("/scheduled/:id", authMiddleware, cancelScheduledPost);

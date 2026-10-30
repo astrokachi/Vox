@@ -1,4 +1,4 @@
-import { Tokens } from "./auth.js";
+import { XTokens } from "./auth.js";
 
 export type TweetReplyResult = {
   url: string;
@@ -9,7 +9,7 @@ export type TweetReplyResult = {
 }
 
 export type TweetReplyDto = {
-  tokens: Tokens,
+  xTokens: XTokens,
   tweetUrls: string[],
   customInstructions: string,
   maximumTime: string

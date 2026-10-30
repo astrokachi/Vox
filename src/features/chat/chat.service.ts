@@ -4,6 +4,7 @@ import {
   conversations,
   messageGroups,
   messages,
+  tweets,
 } from "../../shared/db/schema.js";
 import { NotFoundError } from "../../shared/lib/errors.js";
 import { chatQueue } from "./chat.queue.js";
@@ -13,6 +14,7 @@ import {
   type ChatType,
   type GroupRow,
   type MessageRow,
+  type PostedState,
   type Turn,
   toTurn,
   buildRefinePrompt,
@@ -41,7 +43,32 @@ async function buildTurns(groups: GroupRow[]): Promise<Turn[]> {
     byGroup.set(row.message_group_id, list);
   }
 
-  return groups.map((g) => toTurn(g, byGroup.get(g.id) ?? []));
+  const posted = await postedDrafts(groups[0].conversation_id);
+  return groups.map((g) => toTurn(g, byGroup.get(g.id) ?? [], posted));
+}
+
+/**
+ * Each draft in a conversation that has been published, keyed by draft id.
+ * A draft can be posted more than once with different edits; the latest wins.
+ */
+async function postedDrafts(conversationId: string): Promise<Map<string, PostedState>> {
+  const rows = await db
+    .select({
+      message_id: tweets.message_id,
+      x_post_id: tweets.x_post_id,
+      content: tweets.content,
+      published_at: tweets.published_at,
+    })
+    .from(tweets)
+    .where(and(eq(tweets.conversation_id, conversationId), eq(tweets.status, "SENT")))
+    .orderBy(desc(tweets.published_at));
+
+  const posted = new Map<string, PostedState>();
+  for (const { message_id, published_at, ...rest } of rows) {
+    if (!message_id || !published_at || posted.has(message_id)) continue;
+    posted.set(message_id, { ...rest, published_at });
+  }
+  return posted;
 }
 
 async function requireConversation(conversationId: string, userId: string) {

@@ -1,7 +1,7 @@
 import { generateText, ModelMessage, embed } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 // import OpenAI from "openai";
-import { INSTRUCTIONS, MAX_DRAFT_LENGTH } from "../const.js";
+import { DRAFT_TONES, INSTRUCTIONS, MAX_DRAFT_LENGTH } from "../const.js";
 import { db } from "../db/index.js";
 import { sql } from "drizzle-orm";
 import { memories } from "../db/schema.js";
@@ -104,7 +104,9 @@ export class AIService {
     if (type === "MULTIPLE" && draftCount > 1) {
       systemText +=
         "\n\nIMPORTANT: The user has requested MULTIPLE response options. " +
-        `You must generate exactly ${draftCount} different responses in different tones. ` +
+        `You must generate exactly ${draftCount} different responses, one per tone, in this order: ` +
+        DRAFT_TONES.slice(0, draftCount).map((tone, i) => `${i + 1}) ${tone}`).join("; ") +
+        ". " +
         "Separate each distinct response using EXACTLY this delimiter on its own line: ---OPTION_SEPARATOR---" +
         `\nDo not number them or add any prefix text, just provide the ${draftCount} responses separated by the delimiter.`;
     } else if (type === "MULTIPLE") {

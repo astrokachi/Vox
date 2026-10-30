@@ -6,6 +6,17 @@ export type ChatType = "SINGLE" | "MULTIPLE";
 export type MessageRow = typeof messages.$inferSelect;
 export type GroupRow = typeof messageGroups.$inferSelect;
 
+/** The latest time a draft was published to X. */
+export interface PostedState {
+  x_post_id: string | null;
+  // The text that went out; the user can edit a draft before posting it.
+  content: string;
+  published_at: Date;
+}
+
+/** A response option, with whether it has been published. */
+export type DraftRow = MessageRow & { posted: PostedState | null };
+
 /**
  * A turn = one question (user message) + its response variants (assistant
  * messages), assembled from a single MessageGroup.
@@ -16,17 +27,26 @@ export interface Turn {
   question: MessageRow | null;
   response: {
     type: ChatType;
-    options: MessageRow[];
+    options: DraftRow[];
   };
 }
 
-/** Assemble a turn from its group and the messages that belong to it. */
-export function toTurn(group: GroupRow, groupMessages: MessageRow[]): Turn {
+/**
+ * Assemble a turn from its group and the messages that belong to it.
+ * `posted` maps a draft's id to its published state; drafts not in it are unposted.
+ */
+export function toTurn(
+  group: GroupRow,
+  groupMessages: MessageRow[],
+  posted: ReadonlyMap<string, PostedState> = new Map(),
+): Turn {
   const ordered = [...groupMessages].sort(
     (a, b) => a.created_at.getTime() - b.created_at.getTime(),
   );
   const question = ordered.find((m) => m.role === "user") ?? null;
-  const options = ordered.filter((m) => m.role === "assistant");
+  const options = ordered
+    .filter((m) => m.role === "assistant")
+    .map((m) => ({ ...m, posted: posted.get(m.id) ?? null }));
 
   return {
     turnId: group.id,
