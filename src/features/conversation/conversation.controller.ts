@@ -7,6 +7,7 @@ import {
   deleteConversation,
 } from './conversation.service.js';
 import { sendResponse } from '../../shared/utils/response.js';
+import { parseTake } from '../../shared/utils/pagination.js';
 
 export async function createConv(
   req: Request,
@@ -30,8 +31,8 @@ export async function getAllConversations(
 ) {
   try {
     const userId = req.user!.user_id;
-    const cursor = req.query.cursor as string | undefined;
-    const take = parseInt(req.query.take as string) || 20;
+    const cursor = (req.query.cursor as string | undefined) || undefined;
+    const take = parseTake(req.query.take);
     const result = await getConversations(userId, cursor, take);
     sendResponse(res, 200, 'Conversations retrieved successfully', result.data, result.pagination);
   } catch (error) {
