@@ -59,7 +59,7 @@ List user's conversations (cursor-paginated, newest first).
 **Query:**
 ```typescript
 cursor?: string;   // last item's id from previous page
-take?: number;     // default 20
+take?: number;     // default 20, max 100
 ```
 
 **Response `200`:**
@@ -70,6 +70,7 @@ take?: number;     // default 20
     title: string;
     user_id: string;
     created_at: Date;
+    published: boolean;  // a draft from this conversation has been posted to X
   }[];
   pagination: {
     nextCursor: string | null;
@@ -98,6 +99,9 @@ Get a single conversation with all its message groups and messages.
     updated_at: Date;
     messages: Message[];   // all messages in group, ordered by created_at ASC
   }[];
+  // The latest post published from any of its drafts (refinements included);
+  // null until something is posted.
+  published_post: { x_post_id: string | null; published_at: Date } | null;
 }
 ```
 
@@ -232,26 +236,39 @@ Add a user message to an existing conversation and enqueue an AI response.
 
 ### `GET /api/chat/:id/messages`
 
-Get all messages in a conversation (cursor-paginated, oldest first).
-
-Uses `INNER JOIN` on `messageGroups`, so **refined messages (no `message_group_id`) are excluded**.
+Get a conversation's top-level turns (cursor-paginated, oldest first). Refinement turns are excluded; they come from the thread endpoint.
 
 **Query:**
 ```typescript
-cursor?: string;   // message id
+cursor?: string;   // turn (message group) id
 take?: number;     // default 50
 ```
 
 **Response `200`:**
 ```typescript
 {
-  data: Message[];
+  data: {
+    turnId: string;
+    parentMessageId: string | null;
+    question: Message | null;
+    response: {
+      type: "SINGLE" | "MULTIPLE";
+      // Drafts in tone order (standard, playful, educative).
+      options: (Message & {
+        // Latest publish of this draft to X; null if never posted.
+        // `content` is the text that went out (it can be edited before posting).
+        posted: { x_post_id: string | null; content: string; published_at: Date } | null;
+      })[];
+    };
+  }[];
   pagination: {
     nextCursor: string | null;
     hasNextPage: boolean;
   };
 }
 ```
+
+The thread endpoint's turns carry the same `posted` field on their options.
 
 ---
 
@@ -302,6 +319,61 @@ Request an AI refinement of a specific assistant message. The AI response will b
     parent_id: string;           // the original assistant message being refined
     created_at: Date;
   };
+}
+```
+
+---
+
+## Post Routes (`/api/post`)
+
+### `POST /api/post`
+
+Publish a post to X now. `multipart/form-data`.
+
+**Body:**
+```typescript
+message: string;     // required
+draft_id?: string;   // the assistant message being published; must belong to the user
+media?: File[];      // images
+```
+
+**Response `201`:** the post as X returned it: `{ id, text, edit_history_tweet_ids }`.
+
+**Double-post guard.** The same text (compared after trimming) is published at most once per user. Before
+calling X the server reserves a `Tweet` row (`status = 'DRAFT'`, `content_hash`), guarded by a unique
+index; it becomes `SENT` when X accepts the post, or `FAILED` if X rejects it (which frees the text).
+A reservation older than 2 minutes is treated as abandoned.
+
+**Errors:**
+- `404` — `draft_id` doesn't exist or isn't the user's.
+- `409` `"You've already posted this."` — `data: { x_post_id: string | null }`, the earlier post.
+- `409` `"This post is already being published."` — another request for the same text is in flight.
+
+---
+
+### `GET /api/post/sent`
+
+The user's published posts (cursor-paginated, newest first by `published_at`).
+
+**Query:**
+```typescript
+cursor?: string;   // last item's id from previous page
+take?: number;     // default 20, max 100
+```
+
+**Response `200`:**
+```typescript
+{
+  data: {
+    id: string;
+    content: string;
+    x_post_id: string | null;
+    conversation_id: string | null;      // null if not published from a draft, or the conversation was deleted
+    conversation_title: string | null;
+    message_id: string | null;
+    published_at: Date;
+  }[];
+  pagination: { nextCursor: string | null; hasNextPage: boolean };
 }
 ```
 
@@ -375,6 +447,21 @@ id              text PK     (UUID)
 title           text        not null
 user_id         text        not null
 created_at      timestamp   default now()
+```
+
+### `Tweet`
+
+```
+id              text PK     (UUID)
+user_id         text FK     -> User.id (cascade delete)
+content         text        not null
+status          enum        'DRAFT' (publish in flight) | 'SENT' | 'SCHEDULED' | 'CANCELLED' | 'FAILED'
+dateScheduled   timestamp   not null (publish time for immediate posts)
+x_post_id       text?       set once X accepts the post
+published_at    timestamp?  set when SENT
+conversation_id text FK?    -> Conversation.id (set null on delete)
+message_id      text FK?    -> Message.id (set null on delete)
+content_hash    text?       sha256 of the trimmed text; unique per user among DRAFT/SENT rows
 ```
 
 ### `MessageGroup`
