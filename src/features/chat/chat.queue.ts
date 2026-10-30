@@ -3,15 +3,17 @@ import { db } from "../../shared/db/index.js";
 import { messages } from "../../shared/db/schema.js";
 import { AIService } from "../../shared/services/ai.service.js";
 import { SocketService } from "../../shared/services/socket.service.js";
-import { getKeydbConnection } from "../../shared/lib/keydb-url.js";
+import { getValkeyConnection } from "../../shared/lib/valkey-url.js";
 import { ChatJobData, ChatJobResult } from "./chat.types.js";
+import { clampDraft } from "./chat.turns.js";
+import { DRAFTS_PER_PROMPT, refundDrafts } from "./chat.usage.js";
 
 const aiService = new AIService();
 
 export const chatQueue = new Queue<ChatJobData, ChatJobResult>(
   "chat-response",
   {
-    connection: getKeydbConnection(),
+    connection: getValkeyConnection(),
     defaultJobOptions: {
       attempts: 3,
       backoff: {
@@ -34,7 +36,9 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
       currentUserMessage,
       type,
       parentMessageId,
+      userId,
     } = job.data;
+    const draftCount = job.data.draftCount ?? (type === "MULTIPLE" ? DRAFTS_PER_PROMPT : 1);
     const socketService = SocketService.getInstance();
 
     console.log(
@@ -59,6 +63,10 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
           }
         : undefined;
 
+    // Set once the drafts are in the database. From then on the job must not
+    // fail: a retry would save them again, and the final attempt refunds them.
+    let saved = false;
+
     try {
       const aiResponseContent = await aiService.generateChatResponse(
         conversationId,
@@ -66,48 +74,64 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
         currentUserMessage,
         customInstructions,
         type,
+        draftCount,
       );
 
       // Only MULTIPLE turns are split into variants; SINGLE (e.g. refine)
       // is always exactly one option, even if the model emits a separator.
-      const responseOptions =
+      // Never keep more drafts than were reserved, and cap each at X's length.
+      const responseOptions = (
         type === "MULTIPLE"
-          ? aiResponseContent
-              .split("---OPTION_SEPARATOR---")
-              .map((opt) => opt.trim())
-              .filter((opt) => opt.length > 0)
-          : [aiResponseContent.trim()].filter((opt) => opt.length > 0);
+          ? aiResponseContent.split("---OPTION_SEPARATOR---")
+          : [aiResponseContent]
+      )
+        .map((opt) => clampDraft(opt))
+        .filter((opt) => opt.length > 0)
+        .slice(0, draftCount);
 
-      // Insert every response option into the turn (group) the service created.
-      await Promise.all(
-        responseOptions.map(async (contentOption) => {
-          const [assistantMessage] = await db
-            .insert(messages)
-            .values({
-              conversation_id: conversationId,
-              message_group_id: messageGroupId,
-              role: "assistant",
-              content: contentOption,
-              type,
-              created_at: new Date(),
-            })
-            .returning();
+      if (responseOptions.length === 0) {
+        throw new Error("AI returned no drafts");
+      }
 
-          const event = operation === "refine" ? "message:refined" : "message:received";
-          socketService.emitToConversation(conversationId, event, {
-            conversationId,
-            messageGroupId,
-            parentMessageId: parentMessageId ?? null,
-            message: assistantMessage,
-          });
+      // One insert for the whole turn, so its drafts are saved all or none.
+      // Timestamps a millisecond apart keep the options in the model's order.
+      const now = Date.now();
+      const assistantMessages = await db
+        .insert(messages)
+        .values(
+          responseOptions.map((contentOption, i) => ({
+            conversation_id: conversationId,
+            message_group_id: messageGroupId,
+            role: "assistant" as const,
+            content: contentOption,
+            type,
+            created_at: new Date(now + i),
+          })),
+        )
+        .returning();
+      saved = true;
 
-          aiService
-            .storeMemory(conversationId, contentOption, "chat", "assistant_message")
-            .catch((err) => console.error("Failed to store assistant memory:", err));
+      // The model wrote fewer drafts than reserved: give the rest back before
+      // the client hears about the drafts, so its usage refresh sees the refund.
+      if (userId) {
+        await refundDrafts(userId, draftCount - responseOptions.length).catch((err) =>
+          console.error(`Failed to refund drafts for job ${job.id}:`, err),
+        );
+      }
 
-          return assistantMessage;
-        }),
-      );
+      const event = operation === "refine" ? "message:refined" : "message:received";
+      for (const assistantMessage of assistantMessages) {
+        socketService.emitToConversation(conversationId, event, {
+          conversationId,
+          messageGroupId,
+          parentMessageId: parentMessageId ?? null,
+          message: assistantMessage,
+        });
+
+        aiService
+          .storeMemory(conversationId, assistantMessage.content, "chat", "assistant_message")
+          .catch((err) => console.error("Failed to store assistant memory:", err));
+      }
 
       aiService
         .storeMemory(conversationId, currentUserMessage, "chat", "user_message")
@@ -122,6 +146,19 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+
+      // The drafts are saved and paid for; only the notification failed.
+      // Finish the job instead of retrying it into duplicate drafts.
+      if (saved) {
+        console.error(`Chat job ${job.id} failed after saving its drafts: ${errorMessage}`);
+        return {
+          success: true,
+          conversationId,
+          messageGroupId,
+          parentMessageId: parentMessageId ?? undefined,
+        };
+      }
+
       const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
       console.error(
         `Chat job ${job.id} failed (attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1}): ${errorMessage}`,
@@ -130,6 +167,12 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
       // Only report the failure once retries are exhausted; otherwise the
       // client would flip between "error" and "typing" on every retry.
       if (isFinalAttempt) {
+        // Nothing was generated, so the reservation goes back to the user.
+        if (userId) {
+          await refundDrafts(userId, draftCount).catch((err) =>
+            console.error(`Failed to refund drafts for job ${job.id}:`, err),
+          );
+        }
         socketService.emitToConversation(conversationId, "message:error", {
           conversationId,
           messageGroupId,
@@ -142,7 +185,7 @@ export const worker = new Worker<ChatJobData, ChatJobResult>(
     }
   },
   {
-    connection: getKeydbConnection(),
+    connection: getValkeyConnection(),
     concurrency: 5,
   },
 );

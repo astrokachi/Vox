@@ -34,6 +34,12 @@ export class InvalidTokenError extends AuthenticationError {
   }
 }
 
+export class QuotaExceededError extends AppError {
+  constructor(message = 'Usage limit reached') {
+    super(message, 403);
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(message = 'Resource not found') {
     super(message, 404);

@@ -4,7 +4,7 @@ import { db } from "../../shared/db/index.js";
 import { tweets } from "../../shared/db/schema.js";
 import { XService } from "../../shared/services/x.service.js";
 import { getUserAccessToken } from "../x-account/x-account.service.js";
-import { getKeydbConnection } from "../../shared/lib/keydb-url.js";
+import { getValkeyConnection } from "../../shared/lib/valkey-url.js";
 import {
   SchedulePostJobData,
   SchedulePostJobResultType,
@@ -18,7 +18,7 @@ export function getPostQueue() {
     postQueue = new Queue<SchedulePostJobData, SchedulePostJobResultType>(
       "schedule-post",
       {
-        connection: getKeydbConnection(),
+        connection: getValkeyConnection(),
         defaultJobOptions: {
           attempts: 3,
           backoff: {
@@ -80,7 +80,7 @@ export function startPostWorker() {
       }
     },
     {
-      connection: getKeydbConnection(),
+      connection: getValkeyConnection(),
       concurrency: 1,
     },
   );

@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toTurn, buildRefinePrompt, deriveTitle, type GroupRow, type MessageRow } from "./chat.turns.js";
+import {
+  toTurn,
+  buildRefinePrompt,
+  deriveTitle,
+  clampDraft,
+  type GroupRow,
+  type MessageRow,
+} from "./chat.turns.js";
+import { MAX_DRAFT_LENGTH } from "../../shared/const.js";
 
 const msg = (over: Partial<MessageRow>): MessageRow => ({
   id: "m",
@@ -89,4 +97,32 @@ test("deriveTitle: long content is truncated at a word boundary with ellipsis", 
 
 test("deriveTitle: empty content falls back", () => {
   assert.equal(deriveTitle("   "), "New Conversation");
+});
+
+test("clampDraft: leaves drafts within the limit alone (trimmed)", () => {
+  assert.equal(clampDraft("  short post  "), "short post");
+  const exact = "a".repeat(MAX_DRAFT_LENGTH);
+  assert.equal(clampDraft(exact), exact);
+});
+
+test("clampDraft: cuts long drafts at a word break within the limit", () => {
+  const long = "word ".repeat(100).trim();
+  const out = clampDraft(long);
+  assert.ok(out.length <= MAX_DRAFT_LENGTH, `too long: ${out.length}`);
+  assert.ok(out.endsWith("word"));
+});
+
+test("clampDraft: hard-cuts when there is no usable word break", () => {
+  const out = clampDraft("x".repeat(400));
+  assert.equal(out.length, MAX_DRAFT_LENGTH);
+});
+
+test("clampDraft: counts emoji as two characters, never splitting them", () => {
+  const out = clampDraft("🔥".repeat(300));
+  assert.equal(Array.from(out).length, MAX_DRAFT_LENGTH / 2);
+});
+
+test("clampDraft: counts a link as 23 characters however long it is", () => {
+  const draft = `${"a".repeat(250)} https://example.com/${"x".repeat(100)}`;
+  assert.equal(clampDraft(draft), draft);
 });

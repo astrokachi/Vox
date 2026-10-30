@@ -1,4 +1,6 @@
+import twitter from "twitter-text";
 import { messages, messageGroups } from "../../shared/db/schema.js";
+import { MAX_DRAFT_LENGTH } from "../../shared/const.js";
 
 export type ChatType = "SINGLE" | "MULTIPLE";
 export type MessageRow = typeof messages.$inferSelect;
@@ -47,6 +49,24 @@ export function deriveTitle(content: string, maxLen = 60): string {
   const lastSpace = slice.lastIndexOf(" ");
   const trimmed = lastSpace > 20 ? slice.slice(0, lastSpace) : slice;
   return `${trimmed.trimEnd()}…`;
+}
+
+/**
+ * Hard cap for a generated draft, in case the model ignores the length rule.
+ * Length is measured by X's own counter (emoji and CJK count as 2, every link
+ * as 23, MAX_DRAFT_LENGTH in all); the draft is cut at the last word break
+ * that fits, not mid-word.
+ */
+export function clampDraft(text: string): string {
+  const trimmed = text.trim();
+  const parsed = twitter.parseTweet(trimmed);
+  if (parsed.weightedLength <= MAX_DRAFT_LENGTH) return trimmed;
+
+  // validRangeEnd is the index of the last character that still fits.
+  const slice = trimmed.slice(0, parsed.validRangeEnd + 1);
+  const lastBreak = slice.search(/\s\S*$/);
+  const cut = lastBreak > slice.length / 2 ? slice.slice(0, lastBreak) : slice;
+  return cut.trimEnd();
 }
 
 /** Compose the LLM prompt for a refinement: original draft + user request. */

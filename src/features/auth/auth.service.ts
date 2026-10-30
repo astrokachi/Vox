@@ -1,11 +1,11 @@
-import { keydbClient } from "../../shared/utils/keydb-client.js";
+import { valkeyClient } from "../../shared/utils/valkey-client.js";
 import crypto from "crypto";
 import { Tokens } from "../../shared/types/auth.js";
 import { createUser } from "../user/user.service.js";
 import { generateAccessToken, generateRefreshToken, hashToken } from "../../shared/lib/jwt.js";
 import { createUserInput } from "../../shared/types/user.js";
 import { createXAccount, getXUserDetails } from "../x-account/x-account.service.js";
-import { deleteRefreshToken, getRefreshTokenOwner, storeRefreshToken } from "../../shared/lib/keydb.js";
+import { deleteRefreshToken, getRefreshTokenOwner, storeRefreshToken } from "../../shared/lib/valkey.js";
 import { UnauthorizedError } from "../../shared/lib/errors.js";
 import { getOAuth2Helper, generateCodeVerifier, generateCodeChallenge } from "../../shared/services/x-client.factory.js";
 
@@ -27,7 +27,7 @@ export async function getAuthorizationUrl(state: string, codeVerifier: string, c
 
 export async function saveXTokens({ sessionID, tokens }: { sessionID: string; tokens: Tokens }) {
   try {
-    await keydbClient.set(
+    await valkeyClient.set(
       `session:${sessionID}`,
       JSON.stringify(tokens)
     );

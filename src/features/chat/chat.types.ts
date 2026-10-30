@@ -8,6 +8,11 @@ export interface ChatJobData {
   type: "SINGLE" | "MULTIPLE";
   // Present for refine jobs: the assistant response this turn refines.
   parentMessageId?: string;
+  // Owner of the draft reservation; drafts not generated are refunded to them.
+  // Optional only for jobs queued before reservations existed.
+  userId?: string;
+  // Drafts reserved for this job: how many the model is asked to write.
+  draftCount?: number;
 }
 
 export interface ChatJobResult {

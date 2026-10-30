@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, pgEnum, customType, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, timestamp, pgEnum, customType, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -31,6 +31,8 @@ export const users = pgTable('User', {
   password_hash: text('password_hash'),
   name: text('name').notNull(),
   profile_img_url: text('profile_img_url'),
+  // Drafts generated so far, counted against the free tier (see chat.usage.ts).
+  drafts_used: integer('drafts_used').default(0).notNull(),
   created_at: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { mode: 'date' }).defaultNow().$onUpdateFn(() => new Date()).notNull(),
 });
