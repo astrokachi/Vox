@@ -1,6 +1,6 @@
 import { generateTaskTimings, getTaskDelay } from "../../shared/utils/time-randomizer.js";
 import { tweetReplyQueue } from "./tweet-reply.queue.js";
-import { getSessionTokens } from "../../shared/utils/sessionData.js";
+import { getSessionXTokens } from "../../shared/utils/sessionData.js";
 
 
 export async function processTweets(
@@ -12,7 +12,7 @@ export async function processTweets(
     maxTimeMs: Number(options.maxTimeMs),
   });
 
-  const tokens = await getSessionTokens(sessionID);
+  const xTokens = await getSessionXTokens(sessionID);
 
   for (let i = 0; i < tweetUrls.length; i++) {
     const url = tweetUrls[i];
@@ -21,8 +21,8 @@ export async function processTweets(
       "tweet-reply",
       {
         tweetUrl: url,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: xTokens.accessToken,
+        refreshToken: xTokens.refreshToken,
         sessionID: sessionID,
         customInstructions: options.customInstructions || undefined,
       },

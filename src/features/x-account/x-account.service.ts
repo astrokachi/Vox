@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../shared/db/index.js";
 import { xAccounts } from "../../shared/db/schema.js";
-import { Tokens, XUser } from "../../shared/types/auth.js";
+import { XTokens, XUser } from "../../shared/types/auth.js";
 import { AuthenticationError, NotFoundError } from "../../shared/lib/errors.js";
 import { XService } from "../../shared/services/x.service.js";
 import { getOAuth2Helper } from "../../shared/services/x-client.factory.js";
@@ -9,28 +9,28 @@ import logger from "../../shared/utils/logger.js";
 
 const TOKEN_EXPIRY_MS = 2 * 60 * 60 * 1000;
 
-export async function getXUserDetails(tokens: Tokens): Promise<XUser> {
+export async function getXUserDetails(xTokens: XTokens): Promise<XUser> {
   try {
-    return await XService.getXUserDetails(tokens);
+    return await XService.getXUserDetails(xTokens);
   } catch (err) {
     throw new Error("Failed to fetch X user details");
   }
 }
 
-export async function createXAccount(user_id: string, tokens: Tokens) {
+export async function createXAccount(user_id: string, xTokens: XTokens) {
   try {
     const token_expires_at = new Date(Date.now() + TOKEN_EXPIRY_MS);
 
     await db.insert(xAccounts).values({
       user_id,
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
+      access_token: xTokens.accessToken,
+      refresh_token: xTokens.refreshToken,
       token_expires_at,
     }).onConflictDoUpdate({
       target: xAccounts.user_id,
       set: {
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
+        access_token: xTokens.accessToken,
+        refresh_token: xTokens.refreshToken,
         token_expires_at,
       }
     });

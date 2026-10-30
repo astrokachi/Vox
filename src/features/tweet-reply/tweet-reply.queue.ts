@@ -30,8 +30,8 @@ export const worker = new Worker<TweetReplyJobData, TweetReplyJobResultType>(
       const sessionData = await valkeyClient.get(`session:${sessionID}`);
 
       if (sessionData) {
-        const freshTokens = JSON.parse(sessionData);
-        accessToken = freshTokens.accessToken;
+        const freshXTokens = JSON.parse(sessionData);
+        accessToken = freshXTokens.accessToken;
       }
 
       const xService = new XService(accessToken);

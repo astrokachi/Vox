@@ -1,4 +1,4 @@
-import { Tokens, XUser } from "../types/auth.js";
+import { XTokens, XUser } from "../types/auth.js";
 import { createOAuth2Client, createBearerClient } from "./x-client.factory.js";
 import type { Schemas } from "@xdevplatform/xdk";
 
@@ -15,8 +15,8 @@ export class XService {
     this.accessToken = accessToken;
   }
 
-  static async getXUserDetails(tokens: Tokens): Promise<XUser> {
-    const client = createOAuth2Client(tokens.accessToken);
+  static async getXUserDetails(xTokens: XTokens): Promise<XUser> {
+    const client = createOAuth2Client(xTokens.accessToken);
     const response = await client.users.getMe({
       userFields: ["profile_image_url"],
     });

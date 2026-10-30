@@ -100,7 +100,7 @@ Each feature in `src/features/<name>/` contains:
 | Directories | kebab-case | `tweet-reply/`, `x-account/` |
 | Functions/variables | camelCase | `sendResponse`, `valkeyClient` |
 | Classes | PascalCase | `AIService`, `AppError` |
-| Interfaces/types | PascalCase | `ChatJobData`, `Tokens` |
+| Interfaces/types | PascalCase | `ChatJobData`, `XTokens` |
 | Constants | UPPER_SNAKE_CASE | `INSTRUCTIONS`, `SECRET_KEY` |
 | DB columns (Prisma) | snake_case | `user_id`, `created_at` |
 

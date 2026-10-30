@@ -1,6 +1,6 @@
 import { valkeyClient } from "../../shared/utils/valkey-client.js";
 import crypto from "crypto";
-import { Tokens } from "../../shared/types/auth.js";
+import { XTokens } from "../../shared/types/auth.js";
 import { createUser } from "../user/user.service.js";
 import { generateAccessToken, generateRefreshToken, hashToken } from "../../shared/lib/jwt.js";
 import { createUserInput } from "../../shared/types/user.js";
@@ -25,24 +25,24 @@ export async function getAuthorizationUrl(state: string, codeVerifier: string, c
   return oauth2.getAuthorizationUrl(state);
 }
 
-export async function saveXTokens({ sessionID, tokens }: { sessionID: string; tokens: Tokens }) {
+export async function saveXTokens({ sessionID, xTokens }: { sessionID: string; xTokens: XTokens }) {
   try {
     await valkeyClient.set(
       `session:${sessionID}`,
-      JSON.stringify(tokens)
+      JSON.stringify(xTokens)
     );
   } catch (error) {
     throw error;
   }
 }
 
-export async function exchangeCodeForTokens(code: string, codeVerifier: string): Promise<Tokens> {
+export async function exchangeCodeForXTokens(code: string, codeVerifier: string): Promise<XTokens> {
   try {
     const oauth2 = getOAuth2Helper();
-    const token = await oauth2.exchangeCode(code, codeVerifier);
+    const oauth2token = await oauth2.exchangeCode(code, codeVerifier);
     return {
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token || "",
+      accessToken: oauth2token.access_token,
+      refreshToken: oauth2token.refresh_token || "",
     };
   } catch (error) {
     console.error("Token exchange error:", error);
@@ -84,11 +84,11 @@ export async function xTokenRefresh(refreshToken: string, sessionID: string) {
   try {
     const oauth2 = getOAuth2Helper();
     const token = await oauth2.refreshToken(refreshToken);
-    const tokens: Tokens = {
+    const xTokens: XTokens = {
       accessToken: token.access_token,
       refreshToken: token.refresh_token || refreshToken,
     };
-    await saveXTokens({ sessionID, tokens });
+    await saveXTokens({ sessionID, xTokens });
   } catch (error) {
     console.error(error);
     throw error;
@@ -105,11 +105,11 @@ export async function saveUser(data: createUserInput) {
 }
 
 export async function handleOAuthCallback(code: string, codeVerifier: string, sessionID: string) {
-  const tokens = await exchangeCodeForTokens(code, codeVerifier);
-  await saveXTokens({ sessionID, tokens });
-  const xUser = await getXUserDetails(tokens);
+  const xTokens = await exchangeCodeForXTokens(code, codeVerifier);
+  await saveXTokens({ sessionID, xTokens });
+  const xUser = await getXUserDetails(xTokens);
   const user = await saveUser({ email: xUser.confirmed_email, name: xUser.name, username: xUser.username, id: xUser.id, profile_img_url: xUser.profile_image_url });
-  await createXAccount(user.id, tokens);
+  await createXAccount(user.id, xTokens);
   return user;
 }
 
@@ -124,7 +124,7 @@ export async function logoutUser(rawToken: string): Promise<void> {
   }
 }
 
-export async function issueTokenPair({ id, email, name, username, profile_img_url}: { id: string, email: string, name: string, username: string, profile_img_url: string | null }) {
+export async function issueTokenPair({ id, email, name, username, profile_img_url }: { id: string, email: string, name: string, username: string, profile_img_url: string | null }) {
   const accessToken = generateAccessToken({
     id,
     email,
