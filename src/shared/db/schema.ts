@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, pgEnum, customType, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, timestamp, pgEnum, customType, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -62,10 +62,30 @@ export const tweets = pgTable('Tweet', {
   status: tweetStatusEnum('status').notNull(),
   dateScheduled: timestamp('dateScheduled', { mode: 'date' }).notNull(),
   img: text('img'),
+  // Set once X accepts the post.
+  x_post_id: text('x_post_id'),
+  published_at: timestamp('published_at', { mode: 'date' }),
+  // The draft it was published from, when there is one.
+  conversation_id: text('conversation_id')
+    .references((): AnyPgColumn => conversations.id, { onDelete: 'set null' }),
+  message_id: text('message_id')
+    .references((): AnyPgColumn => messages.id, { onDelete: 'set null' }),
+  // sha256 of the trimmed text; backs the double-post guard below.
+  content_hash: text('content_hash'),
   created_at: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { mode: 'date' }).defaultNow().$onUpdateFn(() => new Date()).notNull(),
 }, (t) => [
   index('Tweet_user_status_idx').on(t.user_id, t.status),
+  index('Tweet_user_published_idx')
+    .on(t.user_id, t.published_at.desc(), t.id.desc())
+    .where(sql`${t.status} = 'SENT'`),
+  index('Tweet_conversation_sent_idx')
+    .on(t.conversation_id)
+    .where(sql`${t.status} = 'SENT'`),
+  // One in-flight (DRAFT) or SENT row per user and text.
+  uniqueIndex('Tweet_user_content_guard_idx')
+    .on(t.user_id, t.content_hash)
+    .where(sql`${t.content_hash} is not null and ${t.status} in ('DRAFT', 'SENT')`),
 ]);
 
 export const tweetsRelations = relations(tweets, ({ one }) => ({

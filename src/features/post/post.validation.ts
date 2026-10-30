@@ -5,6 +5,8 @@ import multer from "multer";
 
 export const postSchema = Joi.object({
   message: Joi.string().required().min(1),
+  // The draft being published; links the post back to its conversation.
+  draft_id: Joi.string().trim().min(1).optional(),
 });
 
 export const schedulePostSchema = Joi.object({
@@ -39,7 +41,7 @@ export const validatePost: RequestHandler = (
   next: NextFunction,
 ) => {
   try {
-    validate(postSchema, req.body);
+    req.body = validate<{ message: string; draft_id?: string }>(postSchema, req.body);
     next();
   } catch (error) {
     next(error);

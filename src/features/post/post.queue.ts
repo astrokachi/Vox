@@ -63,7 +63,7 @@ export function startPostWorker() {
 
         await db
           .update(tweets)
-          .set({ status: "SENT" })
+          .set({ status: "SENT", x_post_id: result.id, published_at: new Date() })
           .where(
             and(eq(tweets.id, tweetId), eq(tweets.status, "SCHEDULED")),
           );
