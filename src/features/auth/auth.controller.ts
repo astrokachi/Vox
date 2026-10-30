@@ -23,9 +23,9 @@ const COOKIE_NAME = 'refresh_token';
 const COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: true,
-  sameSite: 'none',
+  sameSite: 'lax',
   maxAge: REFRESH_TOKEN_TTL * 1000,
-  path: '/auth/refresh',
+  path: '/api/auth',
 }
 
 export async function redirectToTwitterAuth(_req: Request, res: Response) {
